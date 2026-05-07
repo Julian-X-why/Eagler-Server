@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#4ecca3">
+  <title>EaglerNet | MC 1.12.2 Server</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Topbar ─────────────────────────────────────── -->
+  <header id="topbar">
+    <div class="logo">EAGLERNET <span>1.12.2 SERVER</span></div>
+    <div class="topbar-status">
+      <div class="status-dot"></div>
+      <span class="status-text">Stopped</span>
+    </div>
+    <button class="topbar-btn" id="btn-start-server">&#9654; Start Server</button>
+    <button class="topbar-btn danger" id="btn-stop-server" style="display:none">&#9646;&#9646; Stop</button>
+  </header>
+
+  <!-- ── Sidebar ────────────────────────────────────── -->
+  <aside id="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Navigation</div>
+      <button class="nav-btn active" data-tab="console">
+        <span class="icon">&#xBB;</span> Console
+      </button>
+      <button class="nav-btn" data-tab="players">
+        <span class="icon">&#x1F9D1;</span> Players
+      </button>
+      <button class="nav-btn" data-tab="plugins">
+        <span class="icon">&#x2666;</span> Plugins
+      </button>
+      <button class="nav-btn" data-tab="connect">
+        <span class="icon">&#x1F517;</span> Connect
+      </button>
+      <button class="nav-btn" data-tab="world">
+        <span class="icon">&#x1F30D;</span> World
+      </button>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Stats</div>
+      <div class="server-stat"><div class="label">TPS</div><strong id="stat-tps">—</strong></div>
+      <div class="server-stat"><div class="label">Players</div><strong id="stat-players">—</strong></div>
+      <div class="server-stat"><div class="label">Uptime</div><strong id="stat-uptime">—</strong></div>
+      <div class="server-stat"><div class="label">Seed</div><strong id="stat-seed">—</strong></div>
+    </div>
+    <div style="padding:10px 14px;margin-top:auto;font-size:.65rem;color:var(--dim)">
+      Pure Browser JS<br>No Node.js required<br>EaglerForge Plugins
+    </div>
+  </aside>
+
+  <!-- ── Main ───────────────────────────────────────── -->
+  <main id="main">
+
+    <!-- Console Tab -->
+    <div class="tab-content active" id="tab-console">
+      <div id="console-log"></div>
+      <div class="console-input-row">
+        <input type="text" id="console-input" placeholder="Enter server command (e.g. say Hello, kick Player)…" autocomplete="off" spellcheck="false">
+        <button id="console-send">Send</button>
+      </div>
+    </div>
+
+    <!-- Players Tab -->
+    <div class="tab-content" id="tab-players">
+      <div style="padding:16px 16px 0;display:flex;align-items:center;justify-content:space-between">
+        <h2 style="font-size:1rem;color:var(--accent)">Online Players</h2>
+        <button class="btn" onclick="sendCmd('players')">Refresh</button>
+      </div>
+      <div id="players-panel" style="padding:12px 16px">
+        <div class="empty-state">Start the server to see players.</div>
+      </div>
+    </div>
+
+    <!-- Plugins Tab -->
+    <div class="tab-content" id="tab-plugins">
+      <div style="padding:16px 16px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
+        <h2 style="font-size:1rem;color:var(--accent);flex:1">EaglerForge Plugins</h2>
+        <button class="btn primary" id="btn-load-plugin">&#43; Load Plugin</button>
+        <input type="file" id="plugin-file-input" accept=".js" multiple style="display:none">
+      </div>
+      <div id="plugins-list" style="padding:12px 16px;flex:1;overflow-y:auto">
+        <div class="empty-state" style="padding:24px">No plugins loaded.</div>
+      </div>
+      <div style="padding:12px 16px;border-top:1px solid var(--border)">
+        <div class="drop-zone" id="plugin-drop-zone">
+          &#x2666; Drop plugin <code>.js</code> files here, or click to browse
+        </div>
+      </div>
+    </div>
+
+    <!-- Connect Tab -->
+    <div class="tab-content" id="tab-connect">
+      <div id="connect-panel">
+
+        <div class="card">
+          <h3>&#x1F517; How Players Connect</h3>
+          <p>This server runs entirely in your browser. Players connect via <strong>WebRTC</strong> — no IP address needed, works on restricted networks and Chromebooks.</p>
+          <ol class="steps">
+            <li>Start the server (top-right button), then click <strong>Generate Offer</strong> below.</li>
+            <li>Copy the offer code and send it to the player (Discord, email, etc.).</li>
+            <li>Player opens their Eaglercraft/EaglercraftX client and pastes the offer.</li>
+            <li>Player sends back an <em>answer</em> code — paste it in the Answer box.</li>
+            <li>Connection established! Player appears in the Players tab.</li>
+          </ol>
+        </div>
+
+        <div class="card">
+          <h3>&#x1F4E1; Generate Connection Offer</h3>
+          <p>Creates a WebRTC session offer for one player to join.</p>
+          <button class="btn primary" id="btn-create-offer">Generate Offer</button>
+          <div id="offer-section" style="display:none;margin-top:12px">
+            <div style="font-size:.78rem;color:var(--dim);margin-bottom:6px">Share this offer code with the player:</div>
+            <pre class="code-block" id="offer-code">—</pre>
+            <div class="btn-row">
+              <button class="btn accent" id="btn-copy-offer">&#x1F4CB; Copy Offer</button>
+            </div>
+            <div style="font-size:.78rem;color:var(--dim);margin:12px 0 6px">Paste the player's answer here:</div>
+            <textarea class="code-block" id="answer-input" placeholder="Paste player answer SDP here…" rows="4"></textarea>
+            <div class="btn-row">
+              <button class="btn primary" id="btn-accept-answer">Submit Answer</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>&#x1F4BB; Same-Browser Testing</h3>
+          <p>Open another tab, go to the same URL, and connect as a player. Both tabs share the same browser so the MC protocol runs tab-to-tab via BroadcastChannel.</p>
+          <button class="btn" onclick="navigator.clipboard.writeText(location.href).then(()=>notify('URL copied!'))">Copy Server URL</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- World Tab -->
+    <div class="tab-content" id="tab-world">
+      <div id="world-panel">
+        <div class="info-grid">
+          <div class="info-card"><div class="label">Seed</div><div class="value" id="world-seed">—</div><div class="sub">World generation seed</div></div>
+          <div class="info-card"><div class="label">Players</div><div class="value" id="world-players">—</div><div class="sub">Online / Max</div></div>
+          <div class="info-card"><div class="label">TPS</div><div class="value" id="world-tps">—</div><div class="sub">Ticks per second (max 20)</div></div>
+          <div class="info-card"><div class="label">Uptime</div><div class="value" id="world-uptime">—</div><div class="sub">Time since start</div></div>
+          <div class="info-card"><div class="label">Tick</div><div class="value" id="world-tick">—</div><div class="sub">Total ticks elapsed</div></div>
+        </div>
+
+        <div class="card">
+          <h3>Server Configuration</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px">
+            <div>
+              <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">World Seed</div>
+              <input type="number" id="input-seed" placeholder="Random">
+            </div>
+            <div>
+              <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">Max Players</div>
+              <input type="number" id="input-maxplayers" value="20" min="1" max="100">
+            </div>
+            <div>
+              <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">Default Gamemode</div>
+              <input type="number" id="input-gamemode" value="0" min="0" max="3" placeholder="0=Survival">
+            </div>
+            <div>
+              <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">MOTD</div>
+              <input type="text" id="input-motd" placeholder="§aEaglerNet Server">
+            </div>
+          </div>
+          <div style="font-size:.72rem;color:var(--dim);margin-top:8px">
+            &#9432; Configure before starting. Changes require a server restart.
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Folder Structure</h3>
+          <pre style="font-family:var(--mono);font-size:.75rem;color:var(--accent);line-height:1.8">eaglernet/
+├── index.html            ← Open this to start
+├── manifest.json         ← PWA config
+├── sw.js                 ← Offline service worker
+├── css/main.css
+├── js/
+│   ├── dashboard.js      ← Admin UI
+│   ├── plugin-api.js     ← EaglerForge API
+│   └── mc/
+│       ├── buffer.js     ← MC data types (VarInt etc)
+│       ├── nbt.js        ← NBT read/write
+│       ├── noise.js      ← Simplex noise (terrain)
+│       ├── blocks.js     ← Block state IDs (1.12.2)
+│       ├── world.js      ← World generation
+│       ├── chunk.js      ← Chunk encoding
+│       ├── protocol.js   ← MC 1.12.2 state machine
+│       └── server.js     ← Game server (Web Worker)
+└── plugins/
+    └── example-plugin/
+        └── plugin.js     ← EaglerForge plugin example</pre>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script src="js/plugin-api.js"></script>
+<script src="js/dashboard.js"></script>
+</body>
+</html>
