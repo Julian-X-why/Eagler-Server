@@ -1,39 +1,36 @@
 'use strict';
-/* EaglerNet Admin Dashboard — Pure Browser JavaScript */
+/* EaglerNet Admin Dashboard — BOTTLE Plugin API | Pure Browser JS */
 
-// ── State ─────────────────────────────────────────────────
 const state = {
-  workerReady: false,
   serverRunning: false,
   players: new Map(),
-  plugins: [],
   stats: {},
   log: [],
   pendingOffer: null,
 };
-
 window.serverWorker = null;
 
-// ── Utility ───────────────────────────────────────────────
-function $  (id) { return document.getElementById(id); }
-function qs (sel, ctx=document) { return ctx.querySelector(sel); }
-function qsa(sel, ctx=document) { return [...ctx.querySelectorAll(sel)]; }
+// ── Utils ─────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const qs  = (s, ctx=document) => ctx.querySelector(s);
+const qsa = (s, ctx=document) => [...ctx.querySelectorAll(s)];
 
 function notify(msg, type='ok') {
   const el = document.createElement('div');
   el.className = 'notif ' + type;
   el.textContent = msg;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 3200);
+  setTimeout(() => el.remove(), 3100);
 }
-
 function fmtTime(d=new Date()) {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
 }
-
 function fmtUptime(ms) {
-  const s=Math.floor(ms/1000), m=Math.floor(s/60), h=Math.floor(m/60);
-  return h>0 ? `${h}h ${m%60}m` : m>0 ? `${m}m ${s%60}s` : `${s}s`;
+  const s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60);
+  return h>0?`${h}h ${m%60}m`:m>0?`${m}m ${s%60}s`:`${s}s`;
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 // ── Console log ───────────────────────────────────────────
@@ -44,11 +41,8 @@ function addLog(msg, level='info') {
   const log = $('console-log');
   log.appendChild(el);
   log.scrollTop = log.scrollHeight;
+  if (state.log.length > 1000) state.log.shift();
   state.log.push({ time: Date.now(), level, msg });
-}
-
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 // ── Tab navigation ─────────────────────────────────────────
@@ -58,46 +52,47 @@ function showTab(id) {
   $('tab-'+id)?.classList.add('active');
   qs(`.nav-btn[data-tab="${id}"]`)?.classList.add('active');
 }
-
-qsa('.nav-btn[data-tab]').forEach(btn => {
-  btn.addEventListener('click', () => showTab(btn.dataset.tab));
-});
+qsa('.nav-btn[data-tab]').forEach(btn =>
+  btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 
 // ── Server Worker ──────────────────────────────────────────
 function startServerWorker() {
-  if (window.serverWorker) {
-    notify('Server is already running', 'err');
-    return;
+  if (window.serverWorker) { notify('Server already running', 'err'); return; }
+
+  const seed    = parseInt($('input-seed')?.value||'') || undefined;
+  const motd    = $('input-motd')?.value.trim() || undefined;
+  const maxP    = parseInt($('input-maxplayers')?.value||'20');
+  const gmode   = parseInt($('input-gamemode')?.value||'0');
+  const diff    = parseInt($('input-difficulty')?.value||'1');
+
+  addLog('Starting EaglerNet server…', 'info');
+
+  try {
+    const worker = new Worker('./js/mc/server.js');
+    window.serverWorker = worker;
+    worker.addEventListener('message', onWorkerMessage);
+    worker.addEventListener('error', e => {
+      addLog('Worker error: ' + (e.message||'unknown'), 'error');
+      notify('Server worker crashed!', 'err');
+      window.serverWorker = null;
+      state.serverRunning = false;
+      updateServerControls();
+    });
+    worker.postMessage({ type:'start', data:{
+      seed, motd, maxPlayers: maxP,
+      world:{ defaultGamemode: gmode, difficulty: diff, seed },
+    }});
+    state.serverRunning = true;
+    updateServerControls();
+  } catch(e) {
+    addLog('Failed to start worker: ' + e.message, 'error');
+    notify('Could not start server — check browser support', 'err');
   }
-
-  const seed = parseInt($('input-seed')?.value || '') || Math.floor(Math.random()*2147483647);
-  const motd  = $('input-motd')?.value || '§aEaglerNet §71.12.2 Browser Server';
-  const maxP  = parseInt($('input-maxplayers')?.value || '20');
-  const gmode = parseInt($('input-gamemode')?.value || '0');
-
-  addLog('Starting EaglerNet server...', 'info');
-  addLog(`Seed: ${seed}`, 'info');
-
-  const worker = new Worker('./js/mc/server.js');
-  window.serverWorker = worker;
-
-  worker.addEventListener('message', onWorkerMessage);
-  worker.addEventListener('error', (e) => {
-    addLog('Worker error: ' + e.message, 'error');
-    notify('Server worker crashed!', 'err');
-  });
-
-  worker.postMessage({ type: 'start', data: { seed, motd, maxPlayers: maxP, defaultGamemode: gmode } });
-
-  state.serverRunning = true;
-  updateServerControls();
-  // Update sidebar seed display
-  updateSidebarStats();
 }
 
 function stopServer() {
   if (!window.serverWorker) return;
-  window.serverWorker.postMessage({ type: 'command', data: 'stop' });
+  window.serverWorker.postMessage({ type:'command', data:'stop' });
   setTimeout(() => {
     window.serverWorker?.terminate();
     window.serverWorker = null;
@@ -107,53 +102,52 @@ function stopServer() {
     renderPlayers();
     addLog('Server stopped.', 'warn');
     notify('Server stopped');
-  }, 1000);
+  }, 1200);
 }
 
+// ── Worker messages ─────────────────────────────────────────
 function onWorkerMessage(e) {
-  const { type, data } = e;
-  switch(type) {
+  const msg = e.data || {};
+  switch(msg.type) {
     case 'ready':
-      state.workerReady = true;
-      addLog(`World ready — seed: ${e.seed}, spawn Y: ${e.spawnY}`, 'info');
+      addLog(`World ready — seed: ${msg.seed}, spawn Y: ${msg.spawnY}`, 'info');
       break;
     case 'log':
-      addLog(e.msg, e.level || 'info');
+      addLog(msg.msg, msg.level||'info');
       break;
     case 'stats':
-      state.stats = e.data || data;
+      state.stats = msg.data || {};
       updateSidebarStats();
       break;
     case 'chat':
-      addLog(`<${e.username}> ${e.message}`, 'chat');
+      addLog(`<${msg.username}> ${msg.message}`, 'chat');
       break;
     case 'broadcast':
-      // strip JSON chat to plain text for log
-      try {
-        const c = JSON.parse(e.message);
-        addLog(chatToPlain(c), 'info');
-      } catch { addLog(e.message, 'info'); }
+      try { addLog(chatToPlain(JSON.parse(msg.message)), 'info'); }
+      catch { addLog(msg.message, 'info'); }
       break;
     case 'player.join':
-      state.players.set(e.uuid, { username: e.username, uuid: e.uuid, gamemode: 0, health: 20 });
+      state.players.set(msg.uuid, {
+        username: msg.username, uuid: msg.uuid,
+        gamemode: 0, health: 20,
+        version: msg.version || '?', proto: msg.proto,
+      });
       renderPlayers();
-      addLog(`${e.username} joined (${e.count} online)`, 'info');
       break;
     case 'player.quit':
-      state.players.delete(e.uuid);
+      state.players.delete(msg.uuid);
       renderPlayers();
-      addLog(`${e.username} left (${e.count} online)`, 'info');
       break;
     case 'plugin.loaded':
-      state.plugins.push({ name: e.name, version: e.version, enabled: true });
+      addLog(`[BOTTLE] Plugin loaded: ${msg.name} v${msg.version}`, 'info');
+      notify(`Plugin loaded: ${msg.name}`);
       renderPlugins();
-      notify(`Plugin loaded: ${e.name}`);
       break;
     case 'offer-ready':
-      state.pendingOffer = { id: e.id, offer: e.offer };
-      $('offer-code').textContent = e.offer || '(generating…)';
-      $('offer-section').style.display = '';
-      addLog('WebRTC offer generated. Share it with the player.', 'info');
+      state.pendingOffer = { id: msg.id, offer: msg.offer };
+      if ($('offer-code')) $('offer-code').textContent = msg.offer || '(generating…)';
+      $('offer-section')?.style && ($('offer-section').style.display = '');
+      addLog('WebRTC offer ready — share with player.', 'info');
       break;
     case 'stopped':
       addLog('Server shut down cleanly.', 'warn');
@@ -163,189 +157,177 @@ function onWorkerMessage(e) {
 
 function chatToPlain(c) {
   if (typeof c === 'string') return c;
-  let t = c.text || '';
-  if (c.extra) for (const ex of c.extra) t += chatToPlain(ex);
-  return t.replace(/§./g,'');
+  let t = (c.text||'').replace(/§./g,'');
+  if (c.extra) for (const x of c.extra) t += chatToPlain(x);
+  return t;
 }
 
-// ── Sidebar stat display ───────────────────────────────────
+// ── Sidebar stats ──────────────────────────────────────────
 function updateSidebarStats() {
   const s = state.stats;
-  setText('stat-tps',     s.tps != null ? s.tps.toFixed(1) : '—');
-  setText('stat-players', s.players != null ? `${s.players}/${s.max}` : '—');
-  setText('stat-uptime',  s.uptime != null ? fmtUptime(s.uptime) : '—');
-  setText('stat-seed',    s.seed   != null ? s.seed : '—');
+  const set = (id, v) => { const el=$(id); if(el) el.textContent=v; };
+  set('stat-tps',     s.tps    != null ? s.tps.toFixed(1)             : '—');
+  set('stat-players', s.players != null ? `${s.players}/${s.max}`     : '—');
+  set('stat-uptime',  s.uptime  != null ? fmtUptime(s.uptime)         : '—');
+  set('stat-seed',    s.seed    != null ? String(s.seed)              : '—');
+  set('stat-plugins', s.plugins != null ? String(s.plugins)           : '—');
 }
-
-function setText(id, v) { const el=$(id); if(el) el.textContent=v; }
 
 function updateServerControls() {
-  const running = state.serverRunning;
-  $('btn-start-server').style.display  = running ? 'none' : '';
-  $('btn-stop-server').style.display   = running ? '' : 'none';
-  qs('.status-dot')?.classList.toggle('online', running);
-  qs('.status-text').textContent = running ? 'Server Running' : 'Stopped';
+  const r = state.serverRunning;
+  $('btn-start-server').style.display = r ? 'none' : '';
+  $('btn-stop-server').style.display  = r ? '' : 'none';
+  qs('.status-dot')?.classList.toggle('online', r);
+  qs('.status-text').textContent = r ? 'Server Running' : 'Stopped';
 }
 
-// ── Console commands ───────────────────────────────────────
+// ── Console ────────────────────────────────────────────────
 function sendConsoleCommand() {
   const input = $('console-input');
   const cmd = input.value.trim();
   if (!cmd) return;
   if (!window.serverWorker) { notify('Start the server first!', 'err'); return; }
   addLog('> ' + cmd, 'info');
-  window.serverWorker.postMessage({ type: 'command', data: cmd });
+  window.serverWorker.postMessage({ type:'command', data: cmd });
   input.value = '';
 }
-
 $('console-send').addEventListener('click', sendConsoleCommand);
-$('console-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendConsoleCommand(); });
+$('console-input').addEventListener('keydown', e => { if (e.key==='Enter') sendConsoleCommand(); });
 
-// ── Server start/stop buttons ──────────────────────────────
+// ── Start / Stop ───────────────────────────────────────────
 $('btn-start-server').addEventListener('click', startServerWorker);
 $('btn-stop-server').addEventListener('click', stopServer);
 
-// ── Players tab ────────────────────────────────────────────
+// ── Players ────────────────────────────────────────────────
 function renderPlayers() {
   const panel = $('players-panel');
-  if (state.players.size === 0) {
-    panel.innerHTML = '<div class="empty-state">No players online</div>';
+  if (!state.players.size) {
+    panel.innerHTML = '<div class="empty-state">No players online.<br>Start the server and connect to see players here.</div>';
     return;
   }
-  panel.innerHTML = '';
-  for (const p of state.players.values()) {
-    const card = document.createElement('div');
-    card.className = 'player-card';
-    card.innerHTML = `
+  panel.innerHTML = [...state.players.values()].map(p => `
+    <div class="player-card">
       <div class="player-avatar">&#x1F9D1;</div>
       <div class="player-info">
         <div class="player-name">${escHtml(p.username)}</div>
-        <div class="player-meta">UUID: ${p.uuid.slice(0,16)}…</div>
+        <div class="player-meta">UUID: ${p.uuid.slice(0,16)}… | MC ${escHtml(p.version||'?')} | p${p.proto||'?'}</div>
       </div>
       <div class="player-actions">
-        <button class="act-btn" onclick="sendCmd('say Hello from ${escHtml(p.username)}!')">Ping</button>
+        <button class="act-btn" onclick="sendCmd('say Hello, ${escHtml(p.username)}!')">Ping</button>
         <button class="act-btn" onclick="sendCmd('op ${escHtml(p.username)}')">OP</button>
-        <button class="act-btn red" onclick="sendCmd('kick ${escHtml(p.username)}')">Kick</button>
-      </div>`;
-    panel.appendChild(card);
-  }
+        <button class="act-btn red" onclick="sendCmd('kick ${escHtml(p.username)} Kicked by admin')">Kick</button>
+      </div>
+    </div>`).join('');
 }
 
 function sendCmd(cmd) {
   if (!window.serverWorker) { notify('Server not running', 'err'); return; }
-  window.serverWorker.postMessage({ type: 'command', data: cmd });
+  window.serverWorker.postMessage({ type:'command', data: cmd });
   addLog('> ' + cmd, 'info');
 }
+window.sendCmd = sendCmd;
 
-// ── Plugins tab ────────────────────────────────────────────
+// ── Plugins (BOTTLE) ──────────────────────────────────────
 function renderPlugins() {
   const panel = $('plugins-list');
   if (!panel) return;
-  const plugins = EaglerForge.getPlugins();
-  if (plugins.length === 0) {
-    panel.innerHTML = '<div class="empty-state" style="padding:24px">No plugins loaded. Drop a .js file below.</div>';
+  const plugins = BOTTLE.getPlugins().filter(p => !p.builtin);
+  if (!plugins.length) {
+    panel.innerHTML = '<div class="empty-state" style="padding:20px">No user plugins loaded.<br>Drop a .js plugin file below.</div>';
     return;
   }
   panel.innerHTML = plugins.map(p => `
-    <div class="plugin-card" id="plg-${p.id}">
+    <div class="plugin-card">
       <div class="plugin-icon">&#9670;</div>
       <div class="plugin-info">
         <div class="plugin-name">${escHtml(p.name)}</div>
         <div class="plugin-desc">${escHtml(p.description)}</div>
-        <div class="plugin-ver">v${p.version} by ${escHtml(p.author)}</div>
+        <div class="plugin-ver">v${escHtml(p.version)} by ${escHtml(p.author)} · BOTTLE API</div>
       </div>
       <button class="plugin-toggle ${p.enabled?'on':''}" onclick="togglePlugin('${p.id}')">
         ${p.enabled?'Enabled':'Disabled'}
       </button>
     </div>`).join('');
 }
-
 window.togglePlugin = function(id) {
-  const enabled = EaglerForge.toggle(id);
-  notify((enabled?'Enabled':'Disabled') + ' plugin');
+  const on = BOTTLE.toggle(id);
+  notify((on?'Enabled':'Disabled') + ' plugin: ' + id);
   renderPlugins();
 };
 
-// Drop zone for plugin files
-function setupDropZone() {
-  const zone = $('plugin-drop-zone');
-  if (!zone) return;
-  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('over'); });
-  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
-  zone.addEventListener('drop', async e => {
-    e.preventDefault(); zone.classList.remove('over');
-    for (const file of [...e.dataTransfer.files]) await loadPluginFile(file);
+// Drop zone
+const dropZone = $('plugin-drop-zone');
+if (dropZone) {
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+  dropZone.addEventListener('drop', async e => {
+    e.preventDefault(); dropZone.classList.remove('over');
+    for (const f of e.dataTransfer.files) await loadPluginFile(f);
   });
-  zone.addEventListener('click', () => $('plugin-file-input')?.click());
-  $('plugin-file-input')?.addEventListener('change', async e => {
-    for (const file of [...e.target.files]) await loadPluginFile(file);
-    e.target.value = '';
-  });
-  $('btn-load-plugin')?.addEventListener('click', () => $('plugin-file-input')?.click());
+  dropZone.addEventListener('click', () => $('plugin-file-input')?.click());
 }
+$('plugin-file-input')?.addEventListener('change', async e => {
+  for (const f of e.target.files) await loadPluginFile(f);
+  e.target.value = '';
+});
+$('btn-load-plugin')?.addEventListener('click', () => $('plugin-file-input')?.click());
 
 async function loadPluginFile(file) {
   if (!file.name.endsWith('.js')) { notify('Only .js plugin files', 'err'); return; }
   try {
     const code = await file.text();
-    // Load in dashboard context
-    EaglerForge.loadCode(code);
-    // Send to worker if server is running
+    BOTTLE.loadCode(code);
     if (window.serverWorker) {
-      window.serverWorker.postMessage({ type: 'load-plugin', data: { code } });
+      window.serverWorker.postMessage({ type:'load-plugin-code', data:{ code } });
     }
     notify(`Loaded: ${file.name}`);
     renderPlugins();
   } catch(e) { notify('Plugin error: ' + e.message, 'err'); }
 }
 
-// ── WebRTC connection tab ──────────────────────────────────
+// ── WebRTC ─────────────────────────────────────────────────
 $('btn-create-offer')?.addEventListener('click', () => {
   if (!window.serverWorker) { notify('Start the server first!', 'err'); return; }
-  $('offer-code').textContent = 'Generating…';
-  window.serverWorker.postMessage({ type: 'create-offer' });
+  if ($('offer-code')) $('offer-code').textContent = 'Generating…';
+  window.serverWorker.postMessage({ type:'create-offer' });
 });
-
 $('btn-copy-offer')?.addEventListener('click', () => {
-  const text = $('offer-code').textContent;
-  navigator.clipboard.writeText(text).then(() => notify('Copied offer!')).catch(() => {
-    notify('Copy failed — select text manually', 'err');
-  });
+  const t = $('offer-code')?.textContent;
+  if (t) navigator.clipboard.writeText(t).then(() => notify('Offer copied!')).catch(() => notify('Copy failed', 'err'));
 });
-
 $('btn-accept-answer')?.addEventListener('click', () => {
-  const answer = $('answer-input')?.value.trim();
-  if (!answer || !state.pendingOffer) { notify('Paste the player answer first', 'err'); return; }
-  window.serverWorker.postMessage({ type: 'accept-answer', data: { id: state.pendingOffer.id, answer } });
-  notify('Answer submitted — waiting for connection...');
+  const ans = $('answer-input')?.value.trim();
+  if (!ans || !state.pendingOffer) { notify('Paste player answer first', 'err'); return; }
+  window.serverWorker?.postMessage({ type:'accept-answer', data:{ id: state.pendingOffer.id, answer: ans } });
+  notify('Answer submitted…');
 });
 
-// ── World tab ──────────────────────────────────────────────
+// ── World/Config stats refresh ─────────────────────────────
 function updateWorldTab() {
   const s = state.stats;
-  setText('world-seed',    s.seed ?? '—');
-  setText('world-players', s.players != null ? `${s.players}/${s.max}` : '—');
-  setText('world-tps',     s.tps != null ? s.tps.toFixed(2) : '—');
-  setText('world-uptime',  s.uptime != null ? fmtUptime(s.uptime) : '—');
-  setText('world-tick',    s.tick ?? '—');
+  const set = (id,v) => { const el=$(id); if(el) el.textContent=v; };
+  set('world-seed',    s.seed    != null ? String(s.seed)          : '—');
+  set('world-players', s.players != null ? `${s.players}/${s.max}` : '—');
+  set('world-tps',     s.tps     != null ? s.tps.toFixed(2)        : '—');
+  set('world-uptime',  s.uptime  != null ? fmtUptime(s.uptime)     : '—');
+  set('world-tick',    s.tick    != null ? String(s.tick)          : '—');
+  set('world-plugins', s.plugins != null ? String(s.plugins)       : '—');
 }
-
-// Refresh stats every 5 seconds
 setInterval(() => {
   if (window.serverWorker && state.serverRunning) {
-    window.serverWorker.postMessage({ type: 'get-stats' });
+    window.serverWorker.postMessage({ type:'get-stats' });
     updateWorldTab();
   }
 }, 5000);
 
-// ── Service Worker registration ────────────────────────────
+// ── Service Worker ─────────────────────────────────────────
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 
-// ── Init ─────────────────────────────────────────────────
-setupDropZone();
+// ── Init ──────────────────────────────────────────────────
 showTab('console');
 updateServerControls();
-addLog('EaglerNet Dashboard ready. Click "Start Server" to begin.', 'info');
-addLog('All game logic runs in your browser — no Node.js required.', 'info');
+renderPlugins();
+addLog('EaglerNet Dashboard ready. Click "Start Server" to launch the browser MC server.', 'info');
+addLog('Plugin API: BOTTLE (EaglerForge alias supported). Versions: 1.5.2 → 1.12.2.', 'info');
