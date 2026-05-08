@@ -83,6 +83,9 @@ const ServerConfig = {
       anticheat:          false,  // Basic movement/speed anti-cheat
       motd:               true,   // Dynamic MOTD with player count
       tablist:            true,   // Custom tab-list header/footer
+      worldedit:          true,   // WorldEdit region editor (//pos1 //pos2 //set //copy)
+      worldguard:         true,   // WorldGuard region protection (/rg define /rg flag)
+      multiverse:         true,   // Multiverse Core multi-world (/mv create /mv tp)
     },
   },
 

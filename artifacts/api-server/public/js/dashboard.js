@@ -7,6 +7,7 @@ const state = {
   stats: {},
   log: [],
   pendingOffer: null,
+  relayStatus: 'disconnected', // 'disconnected' | 'connecting' | 'connected'
 };
 window.serverWorker = null;
 
@@ -55,6 +56,129 @@ function showTab(id) {
 qsa('.nav-btn[data-tab]').forEach(btn =>
   btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 
+// ── WS Relay Client ─────────────────────────────────────────
+// The Node.js server runs a WebSocket relay on /mc-host.
+// The dashboard connects here so that MC clients connecting by
+// IP address can be bridged into the browser Web Worker (game server).
+let hostWS = null;
+let relayReconnectTimer = null;
+
+function connectRelay() {
+  if (hostWS && (hostWS.readyState === WebSocket.OPEN || hostWS.readyState === WebSocket.CONNECTING)) return;
+  clearTimeout(relayReconnectTimer);
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl  = `${proto}//${location.host}/mc-host`;
+
+  state.relayStatus = 'connecting';
+  updateRelayUI();
+
+  try {
+    hostWS = new WebSocket(wsUrl);
+    hostWS.binaryType = 'arraybuffer';
+  } catch(e) {
+    state.relayStatus = 'disconnected';
+    updateRelayUI();
+    scheduleRelayReconnect();
+    return;
+  }
+
+  hostWS.onopen = () => {
+    state.relayStatus = 'connected';
+    updateRelayUI();
+    hostWS.send(JSON.stringify({ type: 'host-ready' }));
+    addLog('[Relay] WS relay connected — players can connect by IP address', 'info');
+    updateConnectionURLs();
+  };
+
+  hostWS.onmessage = (e) => {
+    if (!window.serverWorker || !state.serverRunning) return;
+    try {
+      const msg = JSON.parse(typeof e.data === 'string' ? e.data : new TextDecoder().decode(e.data));
+      switch (msg.type) {
+        case 'player-connect':
+          window.serverWorker.postMessage({ type: 'ws-player-connect', data: { id: msg.id, ip: msg.ip } });
+          addLog(`[Relay] Player connecting from ${msg.ip} (${msg.id})`, 'info');
+          break;
+        case 'player-data': {
+          const raw = msg.data ? Uint8Array.from(atob(msg.data), c => c.charCodeAt(0)).buffer : new ArrayBuffer(0);
+          window.serverWorker.postMessage({ type: 'ws-player-data', data: { id: msg.id, data: raw } }, [raw]);
+          break;
+        }
+        case 'player-disconnect':
+          window.serverWorker.postMessage({ type: 'ws-player-disconnect', data: { id: msg.id } });
+          addLog(`[Relay] Player disconnected (${msg.id})`, 'info');
+          break;
+      }
+    } catch(err) {
+      // Ignore bad messages
+    }
+  };
+
+  hostWS.onclose = () => {
+    state.relayStatus = 'disconnected';
+    updateRelayUI();
+    if (state.serverRunning) {
+      addLog('[Relay] WS relay disconnected — reconnecting in 3s…', 'warn');
+    }
+    scheduleRelayReconnect();
+  };
+
+  hostWS.onerror = () => {
+    state.relayStatus = 'disconnected';
+    updateRelayUI();
+  };
+}
+
+function scheduleRelayReconnect() {
+  clearTimeout(relayReconnectTimer);
+  relayReconnectTimer = setTimeout(connectRelay, 3000);
+}
+
+function disconnectRelay() {
+  clearTimeout(relayReconnectTimer);
+  if (hostWS) { hostWS.close(); hostWS = null; }
+  state.relayStatus = 'disconnected';
+  updateRelayUI();
+}
+
+// Forward worker→relay (ws-send, ws-disconnect)
+function relayFromWorker(msg) {
+  if (!hostWS || hostWS.readyState !== WebSocket.OPEN) return;
+  switch (msg.type) {
+    case 'ws-send': {
+      const ab  = msg.data instanceof ArrayBuffer ? msg.data : new Uint8Array(msg.data).buffer;
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+      hostWS.send(JSON.stringify({ type: 'player-data', id: msg.id, data: b64 }));
+      break;
+    }
+    case 'ws-disconnect':
+      hostWS.send(JSON.stringify({ type: 'player-kick', id: msg.id, reason: 'Disconnected by server' }));
+      break;
+  }
+}
+
+function updateRelayUI() {
+  const dot  = $('relay-dot');
+  const text = $('relay-status-text');
+  if (!dot || !text) return;
+  const map = { connected: ['#4caf50','Connected'], connecting: ['#ff9800','Connecting…'], disconnected: ['#f44336','Disconnected'] };
+  const [color, label] = map[state.relayStatus] || map.disconnected;
+  dot.style.background = color;
+  text.textContent = label;
+}
+
+function updateConnectionURLs() {
+  const wsEl  = $('ws-connect-url');
+  const wssEl = $('wss-connect-url');
+  if (!wsEl && !wssEl) return;
+  // Replit proxy URL (works from internet)
+  const internetUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/mc`;
+  if (wssEl) wssEl.textContent = internetUrl;
+  // Local note
+  if (wsEl) wsEl.textContent = 'ws://YOUR_LOCAL_IP:8080/mc  (for LAN players on same network)';
+}
+
 // ── Server Worker ──────────────────────────────────────────
 function startServerWorker() {
   if (window.serverWorker) { notify('Server already running', 'err'); return; }
@@ -84,6 +208,8 @@ function startServerWorker() {
     }});
     state.serverRunning = true;
     updateServerControls();
+    // Connect relay so IP players can join
+    connectRelay();
   } catch(e) {
     addLog('Failed to start worker: ' + e.message, 'error');
     notify('Could not start server — check browser support', 'err');
@@ -98,6 +224,7 @@ function stopServer() {
     window.serverWorker = null;
     state.serverRunning = false;
     state.players.clear();
+    disconnectRelay();
     updateServerControls();
     renderPlayers();
     addLog('Server stopped.', 'warn');
@@ -108,6 +235,13 @@ function stopServer() {
 // ── Worker messages ─────────────────────────────────────────
 function onWorkerMessage(e) {
   const msg = e.data || {};
+
+  // WS relay forwarding (from worker → relay)
+  if (msg.type === 'ws-send' || msg.type === 'ws-disconnect') {
+    relayFromWorker(msg);
+    return;
+  }
+
   switch(msg.type) {
     case 'ready':
       addLog(`World ready — seed: ${msg.seed}, spawn Y: ${msg.spawnY}`, 'info');
@@ -302,6 +436,16 @@ $('btn-accept-answer')?.addEventListener('click', () => {
   notify('Answer submitted…');
 });
 
+// Copy connection URL buttons
+$('btn-copy-wss')?.addEventListener('click', () => {
+  const t = $('wss-connect-url')?.textContent;
+  if (t) navigator.clipboard.writeText(t).then(() => notify('URL copied!')).catch(() => notify('Copy failed', 'err'));
+});
+$('btn-copy-ws')?.addEventListener('click', () => {
+  const t = $('ws-connect-url')?.textContent;
+  if (t) navigator.clipboard.writeText(t.split(' ')[0]).then(() => notify('URL copied!')).catch(() => notify('Copy failed', 'err'));
+});
+
 // ── World/Config stats refresh ─────────────────────────────
 function updateWorldTab() {
   const s = state.stats;
@@ -326,8 +470,11 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 }
 
 // ── Init ──────────────────────────────────────────────────
+connectRelay(); // Start relay immediately (auto-reconnects if server not up yet)
 showTab('console');
 updateServerControls();
+updateRelayUI();
 renderPlugins();
 addLog('EaglerNet Dashboard ready. Click "Start Server" to launch the browser MC server.', 'info');
 addLog('Plugin API: BOTTLE (EaglerForge alias supported). Versions: 1.5.2 → 1.12.2.', 'info');
+addLog('Plugins: WorldEdit (//pos1 //set //copy), WorldGuard (/rg define), Multiverse (/mv tp)', 'info');

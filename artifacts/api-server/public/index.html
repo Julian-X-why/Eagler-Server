@@ -93,6 +93,9 @@
           <div class="builtin-badge on" data-id="eaglercraftxserver">EaglercraftXServer</div>
           <div class="builtin-badge off" data-id="chatfilter">ChatFilter</div>
           <div class="builtin-badge off" data-id="anticheat">AntiCheat</div>
+          <div class="builtin-badge on" data-id="worldedit">WorldEdit</div>
+          <div class="builtin-badge on" data-id="worldguard">WorldGuard</div>
+          <div class="builtin-badge on" data-id="multiverse">Multiverse</div>
         </div>
         <div style="font-size:.7rem;color:var(--dim);margin-top:8px">Enable/disable in <code style="color:var(--accent)">config.js</code> → <code style="color:var(--accent)">bottle.builtins</code></div>
       </div>
@@ -111,21 +114,45 @@
     <div class="tab-content" id="tab-connect">
       <div id="connect-panel">
 
+        <!-- ── IP / WS Relay ─────────────────────────────── -->
         <div class="card">
-          <h3>&#x1F517; How Players Connect</h3>
-          <p>This server runs in your browser. Players connect via <strong>WebRTC</strong> — no IP address, no port forwarding, works on Chromebooks and restricted networks.</p>
-          <ol class="steps">
-            <li>Start the server, then click <strong>Generate Offer</strong> below.</li>
-            <li>Copy the offer code — send it via Discord, chat, QR, etc.</li>
-            <li>Player opens EaglercraftX and pastes the offer code (Direct Connect → WebRTC).</li>
-            <li>Player sends back an <em>answer</em> — paste it below.</li>
-            <li>Done! Player appears in the Players tab.</li>
-          </ol>
+          <h3>&#x1F310; Connect by IP Address <span style="font-size:.72rem;font-weight:400;color:var(--dim)">(same network / LAN)</span></h3>
+          <p>Players on the same network can connect directly using a WebSocket address — no SDP exchange needed. The relay is handled by the server automatically.</p>
+          <div style="display:flex;align-items:center;gap:10px;margin:10px 0 4px">
+            <span style="font-size:.75rem;color:var(--dim)">Relay status:</span>
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f44336" id="relay-dot"></span>
+            <span style="font-size:.78rem" id="relay-status-text">Disconnected</span>
+          </div>
+          <div style="margin-top:12px">
+            <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">&#x1F310; Internet URL <span style="color:var(--dim)">(via Replit proxy, works anywhere)</span></div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <code class="code-block" id="wss-connect-url" style="flex:1;padding:6px 10px;font-size:.75rem">—</code>
+              <button class="btn" id="btn-copy-wss">Copy</button>
+            </div>
+          </div>
+          <div style="margin-top:10px">
+            <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">&#x1F4F6; LAN URL <span style="color:var(--dim)">(same network — replace with your machine's local IP)</span></div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <code class="code-block" id="ws-connect-url" style="flex:1;padding:6px 10px;font-size:.75rem">ws://YOUR_LOCAL_IP:8080/mc</code>
+              <button class="btn" id="btn-copy-ws">Copy</button>
+            </div>
+          </div>
+          <div style="font-size:.72rem;color:var(--dim);margin-top:12px;line-height:1.6">
+            In EaglercraftX: <strong>Multiplayer → Direct Connect</strong> → paste the URL above.<br>
+            Start the server first — the relay connects automatically when the server starts.
+          </div>
         </div>
 
+        <!-- ── WebRTC ─────────────────────────────────────── -->
         <div class="card">
-          <h3>&#x1F4E1; Generate Connection Offer</h3>
-          <p>Creates a one-player WebRTC session. Repeat for each player who wants to join.</p>
+          <h3>&#x1F4E1; WebRTC Offer / Answer <span style="font-size:.72rem;font-weight:400;color:var(--dim)">(works across internet)</span></h3>
+          <p>For players who cannot reach this server by URL. Creates a peer-to-peer session — no port forwarding needed, works on restricted networks.</p>
+          <ol class="steps" style="margin:8px 0 10px">
+            <li>Start the server, then click <strong>Generate Offer</strong>.</li>
+            <li>Copy the offer code — send it to the player (Discord, chat, etc).</li>
+            <li>Player opens EaglercraftX → Direct Connect → WebRTC → pastes offer.</li>
+            <li>Player copies back an <em>answer</em> — paste it below and submit.</li>
+          </ol>
           <button class="btn primary" id="btn-create-offer">Generate Offer</button>
           <div id="offer-section" style="display:none;margin-top:14px">
             <div style="font-size:.78rem;color:var(--dim);margin-bottom:6px">&#x1F4CB; Offer SDP — share this with the player:</div>
@@ -143,7 +170,7 @@
 
         <div class="card">
           <h3>&#x1F4BB; Same-Browser / LAN Testing</h3>
-          <p>Open another tab with the same URL and connect as a player. The server runs in this tab's Web Worker; the other tab acts as a client.</p>
+          <p>Open another tab with the same URL to test locally. The server runs in this tab's Web Worker; the other tab acts as a client.</p>
           <div class="btn-row">
             <button class="btn" onclick="navigator.clipboard.writeText(location.href).then(()=>notify('URL copied!'))">&#x1F4CB; Copy Server URL</button>
             <button class="btn" onclick="window.open(location.href,'_blank')">Open New Tab</button>

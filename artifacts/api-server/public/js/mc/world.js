@@ -250,6 +250,48 @@ class MCWorld {
     return result;
   }
 
+  // ── World-space block access (used by BOTTLE world API) ──
+  getBlock(wx, wy, wz) {
+    if (wy < 0 || wy > 255) return 0;
+    const cx = Math.floor(wx / 16), cz = Math.floor(wz / 16);
+    const chunk = this._chunks.get(`${cx},${cz}`);
+    if (!chunk) return 0;
+    const lx = ((wx % 16) + 16) % 16, lz = ((wz % 16) + 16) % 16;
+    const si = wy >> 4, ly = wy & 0xF;
+    if (!chunk.sections[si]) return 0;
+    return chunk.sections[si].blocks[ly * 256 + lz * 16 + lx];
+  }
+
+  setBlock(wx, wy, wz, stateId) {
+    if (wy < 0 || wy > 255) return null;
+    const cx = Math.floor(wx / 16), cz = Math.floor(wz / 16);
+    const chunk = this.getOrGenerateChunk(cx, cz);
+    const lx = ((wx % 16) + 16) % 16, lz = ((wz % 16) + 16) % 16;
+    const si = wy >> 4, ly = wy & 0xF;
+    if (!chunk.sections[si]) {
+      chunk.sections[si] = { blocks: new Uint32Array(4096), hasNonAir: false };
+    }
+    chunk.sections[si].blocks[ly * 256 + lz * 16 + lx] = stateId;
+    if (stateId !== 0) chunk.sections[si].hasNonAir = true;
+    return { cx, cz, chunk };
+  }
+
+  // Fill an axis-aligned box with one block type; returns undo array
+  fillRegion(x1, y1, z1, x2, y2, z2, stateId, replaceMask) {
+    const minX=Math.min(x1,x2), maxX=Math.max(x1,x2);
+    const minY=Math.max(0,Math.min(y1,y2)), maxY=Math.min(255,Math.max(y1,y2));
+    const minZ=Math.min(z1,z2), maxZ=Math.max(z1,z2);
+    const undo = [];
+    for (let y=minY;y<=maxY;y++) for (let z=minZ;z<=maxZ;z++) for (let x=minX;x<=maxX;x++) {
+      const old = this.getBlock(x,y,z);
+      if (replaceMask !== undefined && old !== replaceMask) continue;
+      if (old === stateId) continue;
+      undo.push({ x, y, z, old });
+      this.setBlock(x, y, z, stateId);
+    }
+    return undo;
+  }
+
   tick() { this.time += 1n; }
 }
 

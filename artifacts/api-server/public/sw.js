@@ -1,9 +1,4 @@
-/**
- * EaglerNet Service Worker — Full Offline Support
- * Caches all server files on first load.
- * The MC server runs 100% in the browser from cache.
- */
-const CACHE = 'eaglernet-v2';
+const CACHE = 'eaglernet-v3';
 const ASSETS = [
   './', './index.html', './config.js', './manifest.json',
   './css/main.css',
@@ -15,23 +10,20 @@ const ASSETS = [
   './plugins/eaglercraftxserver/plugin.js',
   './plugins/chatfilter/plugin.js',
   './plugins/anticheat/plugin.js',
+  './plugins/worldedit/plugin.js',
+  './plugins/worldguard/plugin.js',
+  './plugins/multiverse/plugin.js',
 ];
 self.addEventListener('install', e => e.waitUntil(
-  caches.open(CACHE).then(c => c.addAll(ASSETS).catch(()=>{})).then(() => self.skipWaiting())
+  caches.open(CACHE).then(c => c.addAll(ASSETS).catch(()=>{})).then(()=>self.skipWaiting())
 ));
 self.addEventListener('activate', e => e.waitUntil(
-  caches.keys().then(keys => Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))
-    .then(() => self.clients.claim())
+  caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())
 ));
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request).then(r => r || fetch(e.request).then(res => {
-      if (res && res.status === 200) {
-        const clone = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
-      }
-      return res;
-    }).catch(() => caches.match('./index.html')))
-  );
+  if (e.request.method!=='GET') return;
+  e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{
+    if (res&&res.status===200){ const clone=res.clone(); caches.open(CACHE).then(c=>c.put(e.request,clone)); }
+    return res;
+  }).catch(()=>caches.match('./index.html'))));
 });

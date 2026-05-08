@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "jskKUXn0y6iPKeKkC2NvC"
+uri = "file://eaglernet.tar.gz"
+type = "unspecified"
+title = "EaglerNet — Complete Server Package"
