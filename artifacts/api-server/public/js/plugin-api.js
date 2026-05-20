@@ -1,8 +1,7 @@
 /**
- * BOTTLE — EaglerNet Server Plugin API
+ * BOTTLE — EaglerNet Plugin Loader
  * ─────────────────────────────────────────────────────────────
- * BOTTLE is the official plugin API for EaglerNet browser servers.
- * Compatible with EaglerForge plugin format (drop-in replacement).
+ * BOTTLE is the plugin loader for EaglerNet browser servers.
  *
  * Usage in a plugin file:
  *   BOTTLE.register({ id, name, version, description, author }, hooks)
@@ -36,7 +35,6 @@
  *   BOTTLE.version              — '1.0.0'
  *   BOTTLE.apiVersion           — 2
  *
- * Backward-compat alias: window.EaglerForge = window.BOTTLE
  */
 'use strict';
 
@@ -135,5 +133,4 @@ if (typeof window !== 'undefined') {
   };
 
   window.BOTTLE = BOTTLE_IMPL;
-  window.EaglerForge = BOTTLE_IMPL; // backward-compat alias
 }

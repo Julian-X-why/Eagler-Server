@@ -30,6 +30,11 @@ app.use(express.urlencoded({ extended: true }));
 // Serve the pure-browser MC 1.12.2 server dashboard as static files.
 // ALL game logic runs in the browser — this just serves HTML/CSS/JS files.
 const publicDir = path.join(__dirname, "../public");
+
+// The proxy routes /api/* → this server without rewriting, so we must
+// serve static files under BOTH "/" and "/api/" to cover relative asset
+// paths that the browser resolves as /api/css/... , /api/js/... , etc.
+app.use("/api", express.static(publicDir));
 app.use(express.static(publicDir));
 
 app.use("/api", router);

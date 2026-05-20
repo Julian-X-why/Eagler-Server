@@ -13,7 +13,7 @@
 
   <!-- ── Topbar ─────────────────────────────────────── -->
   <header id="topbar">
-    <div class="logo">EAGLERNET <span>1.5.2–1.12.2 · BOTTLE API</span></div>
+    <div class="logo">EAGLERNET <span>1.5.2–1.12.2 · Plugin Loader</span></div>
     <div class="topbar-status">
       <div class="status-dot"></div>
       <span class="status-text">Stopped</span>
@@ -28,7 +28,7 @@
       <div class="sidebar-label">Navigation</div>
       <button class="nav-btn active" data-tab="console"><span class="icon">&#xBB;</span> Console</button>
       <button class="nav-btn" data-tab="players"><span class="icon">&#x1F9D1;</span> Players</button>
-      <button class="nav-btn" data-tab="plugins"><span class="icon">&#x2666;</span> BOTTLE Plugins</button>
+      <button class="nav-btn" data-tab="plugins"><span class="icon">&#x2666;</span> Plugin Loader</button>
       <button class="nav-btn" data-tab="connect"><span class="icon">&#x1F517;</span> Connect</button>
       <button class="nav-btn" data-tab="world"><span class="icon">&#x1F30D;</span> World &amp; Config</button>
     </div>
@@ -41,7 +41,7 @@
       <div class="server-stat"><div class="label">Plugins</div><strong id="stat-plugins">—</strong></div>
     </div>
     <div style="padding:10px 14px;margin-top:auto;font-size:.65rem;color:var(--dim);line-height:1.8">
-      Pure Browser JS<br>No Node.js for game logic<br>BOTTLE Plugin API v2<br>EaglercraftX Compatible
+      Pure Browser JS<br>No Node.js for game logic<br>BOTTLE Plugin Loader<br>EaglercraftX Compatible
     </div>
   </aside>
 
@@ -73,13 +73,13 @@
       </div>
     </div>
 
-    <!-- ── BOTTLE Plugins Tab ────────────────────────── -->
+    <!-- ── Plugin Loader Tab ────────────────────────── -->
     <div class="tab-content" id="tab-plugins">
       <div style="padding:14px 16px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
         <div style="flex:1">
-          <h2 style="font-size:.95rem;color:var(--accent)">BOTTLE Plugin Manager</h2>
+          <h2 style="font-size:.95rem;color:var(--accent)">Plugin Loader</h2>
           <div style="font-size:.72rem;color:var(--dim);margin-top:2px">
-            EaglerForge is an alias — all plugins work with both names
+            Drop in any <code>.js</code> plugin — calls <code>BOTTLE.register()</code>
           </div>
         </div>
         <button class="btn primary" id="btn-load-plugin">&#43; Load Plugin</button>
@@ -97,7 +97,7 @@
           <div class="builtin-badge on" data-id="worldguard">WorldGuard</div>
           <div class="builtin-badge on" data-id="multiverse">Multiverse</div>
         </div>
-        <div style="font-size:.7rem;color:var(--dim);margin-top:8px">Enable/disable in <code style="color:var(--accent)">config.js</code> → <code style="color:var(--accent)">bottle.builtins</code></div>
+        <div style="font-size:.7rem;color:var(--dim);margin-top:8px">Toggle in <code style="color:var(--accent)">config.js</code> → <code style="color:var(--accent)">bottle.builtins</code></div>
       </div>
 
       <div id="plugins-list" style="padding:12px 16px;flex:1;overflow-y:auto">
@@ -105,7 +105,7 @@
       </div>
       <div style="padding:12px 16px;border-top:1px solid var(--border)">
         <div class="drop-zone" id="plugin-drop-zone">
-          &#x2666; Drop <code>.js</code> plugin files here — uses <code>BOTTLE.register()</code> or <code>EaglerForge.register()</code>
+          &#x2666; Drop <code>.js</code> plugin files here — calls <code>BOTTLE.register(manifest, hooks)</code>
         </div>
       </div>
     </div>
@@ -191,7 +191,7 @@
           <div class="info-card"><div class="label">TPS</div><div class="value" id="world-tps">—</div><div class="sub">Max 20</div></div>
           <div class="info-card"><div class="label">Uptime</div><div class="value" id="world-uptime">—</div><div class="sub">Since start</div></div>
           <div class="info-card"><div class="label">Tick</div><div class="value" id="world-tick">—</div><div class="sub">Total elapsed</div></div>
-          <div class="info-card"><div class="label">Plugins</div><div class="value" id="world-plugins">—</div><div class="sub">BOTTLE loaded</div></div>
+          <div class="info-card"><div class="label">Plugins</div><div class="value" id="world-plugins">—</div><div class="sub">Loaded</div></div>
         </div>
 
         <!-- Server config -->
@@ -238,13 +238,12 @@
           <div style="font-size:.7rem;color:var(--dim);margin-top:10px">★ Native format. Older versions use a protocol compatibility layer.</div>
         </div>
 
-        <!-- BOTTLE plugin config -->
+        <!-- Plugin Loader config -->
         <div class="card">
-          <h3>BOTTLE Plugin API</h3>
+          <h3>BOTTLE Plugin Loader</h3>
           <div style="font-size:.8rem;color:var(--dim);line-height:1.7;margin-bottom:10px">
-            The plugin API is named <strong style="color:var(--accent)">BOTTLE</strong>.
-            <code style="color:var(--accent)">EaglerForge</code> is a drop-in alias for compatibility with existing EaglerForge plugins.
-            Plugins call <code style="color:var(--accent)">BOTTLE.register(manifest, hooks)</code> or <code style="color:var(--accent)">EaglerForge.register(manifest, hooks)</code>.
+            EaglerNet uses <strong style="color:var(--accent)">BOTTLE</strong> as its plugin loader.
+            Plugins register with <code style="color:var(--accent)">BOTTLE.register(manifest, hooks)</code>.
           </div>
           <div style="font-size:.72rem;color:var(--dim);margin-bottom:6px">Built-in plugins (toggle in <code style="color:var(--accent)">config.js</code>):</div>
           <table style="width:100%;border-collapse:collapse;font-size:.78rem">

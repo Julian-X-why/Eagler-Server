@@ -476,5 +476,5 @@ updateServerControls();
 updateRelayUI();
 renderPlugins();
 addLog('EaglerNet Dashboard ready. Click "Start Server" to launch the browser MC server.', 'info');
-addLog('Plugin API: BOTTLE (EaglerForge alias supported). Versions: 1.5.2 → 1.12.2.', 'info');
-addLog('Plugins: WorldEdit (//pos1 //set //copy), WorldGuard (/rg define), Multiverse (/mv tp)', 'info');
+addLog('Plugin Loader: BOTTLE. Versions: 1.5.2 → 1.12.2. Use the Plugin Loader tab to add plugins.', 'info');
+addLog('Built-in: WorldEdit (//pos1 //set //copy), WorldGuard (/rg define), Multiverse (/mv tp)', 'info');
