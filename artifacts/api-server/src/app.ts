@@ -31,11 +31,23 @@ app.use(express.urlencoded({ extended: true }));
 // ALL game logic runs in the browser — this just serves HTML/CSS/JS files.
 const publicDir = path.join(__dirname, "../public");
 
+// Development: prevent browsers from caching index.html so asset version
+// query params (?v=N) are always re-evaluated.
+const htmlCacheOpts =
+  process.env.NODE_ENV !== "production"
+    ? { setHeaders: (res: import("http").ServerResponse, path: string) => {
+        if (path.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+          res.setHeader("Pragma", "no-cache");
+        }
+      }}
+    : {};
+
 // The proxy routes /api/* → this server without rewriting, so we must
 // serve static files under BOTH "/" and "/api/" to cover relative asset
 // paths that the browser resolves as /api/css/... , /api/js/... , etc.
-app.use("/api", express.static(publicDir));
-app.use(express.static(publicDir));
+app.use("/api", express.static(publicDir, htmlCacheOpts));
+app.use(express.static(publicDir, htmlCacheOpts));
 
 app.use("/api", router);
 

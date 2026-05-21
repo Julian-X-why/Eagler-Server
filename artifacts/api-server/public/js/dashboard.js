@@ -1,17 +1,41 @@
 'use strict';
-/* EaglerNet Admin Dashboard — BOTTLE Plugin API | Pure Browser JS */
+/* EaglerNet Admin Dashboard — BOTTLE Plugin Loader | Pure Browser JS */
 
+// ── State ──────────────────────────────────────────────────
 const state = {
   serverRunning: false,
   players: new Map(),
   stats: {},
   log: [],
   pendingOffer: null,
-  relayStatus: 'disconnected', // 'disconnected' | 'connecting' | 'connected'
+  relayStatus: 'disconnected',
+  isStaticMode: false,
 };
 window.serverWorker = null;
 
-// ── Utils ─────────────────────────────────────────────────
+// ── Static mode detection ──────────────────────────────────
+// Determines if we're on a static host (GitHub Pages, file://, etc.)
+// where the Node.js WS relay won't be available.
+// localhost / 127.0.0.1 always means Node.js is serving → NOT static.
+// Replit previews use *.replit.dev or *.repl.co → NOT static.
+(function detectMode() {
+  const h = location.hostname;
+  const isLocal =
+    h === 'localhost' || h === '127.0.0.1' ||
+    h.endsWith('.replit.dev') || h.endsWith('.repl.co') ||
+    h.endsWith('.repl.it')   || h.endsWith('.replit.app') ||
+    h.endsWith('.replit.co');
+  const isStaticHost =
+    location.protocol === 'file:' ||
+    h.endsWith('.github.io')   ||
+    h.endsWith('.pages.dev')   ||
+    h.endsWith('.netlify.app') ||
+    h.endsWith('.vercel.app')  ||
+    h.endsWith('.surge.sh');
+  state.isStaticMode = isStaticHost && !isLocal;
+})();
+
+// ── Utils ──────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const qs  = (s, ctx=document) => ctx.querySelector(s);
 const qsa = (s, ctx=document) => [...ctx.querySelectorAll(s)];
@@ -33,41 +57,114 @@ function fmtUptime(ms) {
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+window.copyText = function(text) {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  }
+  return fallbackCopy(text);
+};
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch {}
+  document.body.removeChild(ta);
+}
 
-// ── Console log ───────────────────────────────────────────
+// ── Console log ────────────────────────────────────────────
 function addLog(msg, level='info') {
   const el = document.createElement('div');
   el.className = `log-line log-${level}`;
-  el.innerHTML = `<span class="log-time">[${fmtTime()}]</span><span class="log-msg">${escHtml(msg)}</span>`;
+  // Strip MC colour codes for display
+  const clean = escHtml(msg.replace(/§./g, ''));
+  el.innerHTML = `<span class="log-time">[${fmtTime()}]</span><span class="log-msg">${clean}</span>`;
   const log = $('console-log');
   log.appendChild(el);
-  log.scrollTop = log.scrollHeight;
-  if (state.log.length > 1000) state.log.shift();
+  // Auto-scroll only if near bottom
+  if (log.scrollHeight - log.scrollTop - log.clientHeight < 120) {
+    log.scrollTop = log.scrollHeight;
+  }
+  if (state.log.length > 1200) state.log.shift();
   state.log.push({ time: Date.now(), level, msg });
 }
 
-// ── Tab navigation ─────────────────────────────────────────
+// ── Tab navigation ──────────────────────────────────────────
 function showTab(id) {
   qsa('.tab-content').forEach(t => t.classList.remove('active'));
-  qsa('.nav-btn').forEach(b => b.classList.remove('active'));
+  qsa('.nav-btn[data-tab]').forEach(b => b.classList.remove('active'));
+  qsa('.bnav-btn[data-tab]').forEach(b => b.classList.remove('active'));
   $('tab-'+id)?.classList.add('active');
   qs(`.nav-btn[data-tab="${id}"]`)?.classList.add('active');
+  qs(`.bnav-btn[data-tab="${id}"]`)?.classList.add('active');
+  closeSidebar(); // auto-close on mobile after navigation
 }
-qsa('.nav-btn[data-tab]').forEach(btn =>
+
+qsa('[data-tab]').forEach(btn =>
   btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 
+// ── Mobile sidebar ──────────────────────────────────────────
+function openSidebar() {
+  $('sidebar').classList.add('open');
+  $('sidebar-overlay').classList.add('open');
+}
+function closeSidebar() {
+  $('sidebar').classList.remove('open');
+  $('sidebar-overlay').classList.remove('open');
+}
+$('btn-menu')?.addEventListener('click', openSidebar);
+$('sidebar-overlay')?.addEventListener('click', closeSidebar);
+
+// ── Getting Started banner ──────────────────────────────────
+const GS_KEY = 'eaglernet_gs_dismissed';
+if (localStorage.getItem(GS_KEY)) {
+  $('gs-banner')?.remove();
+}
+$('gs-dismiss')?.addEventListener('click', () => {
+  localStorage.setItem(GS_KEY, '1');
+  $('gs-banner')?.remove();
+});
+
+// ── Mode UI setup ───────────────────────────────────────────
+function applyModeUI() {
+  const badge  = $('mode-badge');
+  const sBanner = $('static-banner');
+  const sGuide  = $('static-guide-card');
+  const relayCard = $('relay-card');
+  const modeLabel = $('connect-mode-label');
+  const modeDesc  = $('connect-mode-desc');
+
+  if (state.isStaticMode) {
+    if (badge) { badge.textContent = '📦 Static Mode'; badge.className = 'mode-badge static-mode'; }
+    sBanner?.style && (sBanner.style.display = 'flex');
+    sGuide?.style  && (sGuide.style.display = '');
+    relayCard?.style && (relayCard.style.display = 'none');
+    if (modeLabel) modeLabel.textContent = 'Static Hosting';
+    if (modeDesc)  modeDesc.innerHTML =
+      '<strong style="color:var(--yellow)">⚠ No WS relay</strong> — this page is served from a static host. ' +
+      'WebRTC peer-to-peer connections work perfectly. For IP/URL connections, deploy the included Node.js server ' +
+      '(<code style="font-family:var(--mono);color:var(--accent)">pnpm run dev</code> locally or on a VPS).';
+    if ($('h-relay-hstat')) $('h-relay-hstat').style.display = 'none';
+  } else {
+    if (badge) { badge.textContent = '⚡ Relay Mode'; badge.className = 'mode-badge relay'; }
+    if (modeLabel) modeLabel.textContent = 'Full Mode (Node.js relay active)';
+    if (modeDesc)  modeDesc.innerHTML =
+      '<strong style="color:var(--accent)">✓ WS relay available</strong> — both WebRTC peer-to-peer <em>and</em> ' +
+      'IP/URL connections work. Share the URLs from the <em>Connect by IP</em> card below with players.';
+    if ($('h-relay-hstat')) $('h-relay-hstat').style.display = '';
+    updateConnectionURLs();
+  }
+}
+
 // ── WS Relay Client ─────────────────────────────────────────
-// The Node.js server runs a WebSocket relay on /mc-host.
-// The dashboard connects here so that MC clients connecting by
-// IP address can be bridged into the browser Web Worker (game server).
 let hostWS = null;
 let relayReconnectTimer = null;
 
 function connectRelay() {
+  if (state.isStaticMode) return; // no relay in static mode
   if (hostWS && (hostWS.readyState === WebSocket.OPEN || hostWS.readyState === WebSocket.CONNECTING)) return;
   clearTimeout(relayReconnectTimer);
 
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const proto  = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl  = `${proto}//${location.host}/mc-host`;
 
   state.relayStatus = 'connecting';
@@ -87,7 +184,7 @@ function connectRelay() {
     state.relayStatus = 'connected';
     updateRelayUI();
     hostWS.send(JSON.stringify({ type: 'host-ready' }));
-    addLog('[Relay] WS relay connected — players can connect by IP address', 'info');
+    addLog('[Relay] WS relay connected — players can connect by IP', 'info');
     updateConnectionURLs();
   };
 
@@ -98,7 +195,7 @@ function connectRelay() {
       switch (msg.type) {
         case 'player-connect':
           window.serverWorker.postMessage({ type: 'ws-player-connect', data: { id: msg.id, ip: msg.ip } });
-          addLog(`[Relay] Player connecting from ${msg.ip} (${msg.id})`, 'info');
+          addLog(`[Relay] Player connecting from ${msg.ip}`, 'info');
           break;
         case 'player-data': {
           const raw = msg.data ? Uint8Array.from(atob(msg.data), c => c.charCodeAt(0)).buffer : new ArrayBuffer(0);
@@ -107,23 +204,17 @@ function connectRelay() {
         }
         case 'player-disconnect':
           window.serverWorker.postMessage({ type: 'ws-player-disconnect', data: { id: msg.id } });
-          addLog(`[Relay] Player disconnected (${msg.id})`, 'info');
           break;
       }
-    } catch(err) {
-      // Ignore bad messages
-    }
+    } catch { /* ignore bad messages */ }
   };
 
   hostWS.onclose = () => {
     state.relayStatus = 'disconnected';
     updateRelayUI();
-    if (state.serverRunning) {
-      addLog('[Relay] WS relay disconnected — reconnecting in 3s…', 'warn');
-    }
+    if (state.serverRunning) addLog('[Relay] Relay disconnected — reconnecting…', 'warn');
     scheduleRelayReconnect();
   };
-
   hostWS.onerror = () => {
     state.relayStatus = 'disconnected';
     updateRelayUI();
@@ -131,8 +222,9 @@ function connectRelay() {
 }
 
 function scheduleRelayReconnect() {
+  if (state.isStaticMode) return;
   clearTimeout(relayReconnectTimer);
-  relayReconnectTimer = setTimeout(connectRelay, 3000);
+  relayReconnectTimer = setTimeout(connectRelay, 4000);
 }
 
 function disconnectRelay() {
@@ -142,7 +234,6 @@ function disconnectRelay() {
   updateRelayUI();
 }
 
-// Forward worker→relay (ws-send, ws-disconnect)
 function relayFromWorker(msg) {
   if (!hostWS || hostWS.readyState !== WebSocket.OPEN) return;
   switch (msg.type) {
@@ -161,42 +252,62 @@ function relayFromWorker(msg) {
 function updateRelayUI() {
   const dot  = $('relay-dot');
   const text = $('relay-status-text');
-  if (!dot || !text) return;
-  const map = { connected: ['#4caf50','Connected'], connecting: ['#ff9800','Connecting…'], disconnected: ['#f44336','Disconnected'] };
-  const [color, label] = map[state.relayStatus] || map.disconnected;
-  dot.style.background = color;
-  text.textContent = label;
+  const hDot = $('h-relay-state');
+  const colors = { connected:'var(--green)', connecting:'var(--yellow)', disconnected:'var(--dim)' };
+  const labels = { connected:'Connected', connecting:'Connecting…', disconnected:'Disconnected' };
+  if (dot) dot.style.background = colors[state.relayStatus] || colors.disconnected;
+  if (text) text.textContent = labels[state.relayStatus] || 'Disconnected';
+  if (hDot) {
+    hDot.textContent = labels[state.relayStatus] === 'Connected' ? 'Connected' : 'Offline';
+    hDot.style.color = colors[state.relayStatus];
+  }
+  // Also update topbar dot glow if relay status is relevant
 }
 
 function updateConnectionURLs() {
-  const wsEl  = $('ws-connect-url');
-  const wssEl = $('wss-connect-url');
-  if (!wsEl && !wssEl) return;
-  // Replit proxy URL (works from internet)
+  if (state.isStaticMode) return;
   const internetUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/mc`;
-  if (wssEl) wssEl.textContent = internetUrl;
-  // Local note
-  if (wsEl) wsEl.textContent = 'ws://YOUR_LOCAL_IP:8080/mc  (for LAN players on same network)';
+  const wsEl = $('wss-connect-url');
+  if (wsEl) wsEl.textContent = internetUrl;
+  const lanEl = $('ws-connect-url');
+  if (lanEl) lanEl.textContent = 'ws://YOUR_LOCAL_IP:' + (location.port || '80') + '/mc';
 }
 
-// ── Server Worker ──────────────────────────────────────────
+// ── Copy buttons ────────────────────────────────────────────
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-copy]');
+  if (!btn) return;
+  const src = $(btn.dataset.copy);
+  if (!src) return;
+  const text = src.tagName === 'TEXTAREA' ? src.value : src.textContent;
+  copyText(text);
+  btn.textContent = '✓ Copied!';
+  btn.classList.add('copied');
+  setTimeout(() => {
+    btn.textContent = btn.dataset.copy === 'offer-code' ? '📋 Copy Offer' : 'Copy';
+    btn.classList.remove('copied');
+  }, 2000);
+});
+
+// ── Server Worker ───────────────────────────────────────────
 function startServerWorker() {
-  if (window.serverWorker) { notify('Server already running', 'err'); return; }
+  if (window.serverWorker) { notify('Server already running', 'warn'); return; }
 
-  const seed    = parseInt($('input-seed')?.value||'') || undefined;
-  const motd    = $('input-motd')?.value.trim() || undefined;
-  const maxP    = parseInt($('input-maxplayers')?.value||'20');
-  const gmode   = parseInt($('input-gamemode')?.value||'0');
-  const diff    = parseInt($('input-difficulty')?.value||'1');
+  const seed   = parseInt($('input-seed')?.value || '') || undefined;
+  const motd   = $('input-motd')?.value.trim() || undefined;
+  const maxP   = parseInt($('input-maxplayers')?.value || '20');
+  const gmode  = parseInt($('input-gamemode')?.value  || '0');
+  const diff   = parseInt($('input-difficulty')?.value || '1');
 
-  addLog('Starting EaglerNet server…', 'info');
+  addLog('Starting EaglerNet…', 'system');
 
   try {
     const worker = new Worker('./js/mc/server.js');
     window.serverWorker = worker;
     worker.addEventListener('message', onWorkerMessage);
     worker.addEventListener('error', e => {
-      addLog('Worker error: ' + (e.message||'unknown'), 'error');
+      addLog('Worker crash: ' + (e.message || 'unknown error'), 'error');
+      addLog('Check browser console for details. Ensure all JS files are reachable.', 'warn');
       notify('Server worker crashed!', 'err');
       window.serverWorker = null;
       state.serverRunning = false;
@@ -208,11 +319,13 @@ function startServerWorker() {
     }});
     state.serverRunning = true;
     updateServerControls();
-    // Connect relay so IP players can join
-    connectRelay();
+    if (!state.isStaticMode) connectRelay();
+    // Dismiss getting started after first server start
+    localStorage.setItem(GS_KEY, '1');
+    $('gs-banner')?.remove();
   } catch(e) {
-    addLog('Failed to start worker: ' + e.message, 'error');
-    notify('Could not start server — check browser support', 'err');
+    addLog('Failed to start: ' + e.message, 'error');
+    notify('Could not start — check browser support (needs Web Workers)', 'err');
   }
 }
 
@@ -224,10 +337,12 @@ function stopServer() {
     window.serverWorker = null;
     state.serverRunning = false;
     state.players.clear();
+    state.stats = {};
     disconnectRelay();
     updateServerControls();
+    updateSidebarStats();
     renderPlayers();
-    addLog('Server stopped.', 'warn');
+    addLog('Server stopped.', 'system');
     notify('Server stopped');
   }, 1200);
 }
@@ -236,7 +351,6 @@ function stopServer() {
 function onWorkerMessage(e) {
   const msg = e.data || {};
 
-  // WS relay forwarding (from worker → relay)
   if (msg.type === 'ws-send' || msg.type === 'ws-disconnect') {
     relayFromWorker(msg);
     return;
@@ -244,14 +358,15 @@ function onWorkerMessage(e) {
 
   switch(msg.type) {
     case 'ready':
-      addLog(`World ready — seed: ${msg.seed}, spawn Y: ${msg.spawnY}`, 'info');
+      addLog(`World ready — seed: ${msg.seed}, spawn Y: ${msg.spawnY}`, 'system');
       break;
     case 'log':
-      addLog(msg.msg, msg.level||'info');
+      addLog(msg.msg, msg.level || 'info');
       break;
     case 'stats':
       state.stats = msg.data || {};
       updateSidebarStats();
+      updateHeroStats();
       break;
     case 'chat':
       addLog(`<${msg.username}> ${msg.message}`, 'chat');
@@ -263,129 +378,192 @@ function onWorkerMessage(e) {
     case 'player.join':
       state.players.set(msg.uuid, {
         username: msg.username, uuid: msg.uuid,
-        gamemode: 0, health: 20,
+        gamemode: 0, health: 20, isOp: false,
         version: msg.version || '?', proto: msg.proto,
       });
       renderPlayers();
+      updateHeroStats();
       break;
     case 'player.quit':
       state.players.delete(msg.uuid);
       renderPlayers();
+      updateHeroStats();
       break;
     case 'plugin.loaded':
-      addLog(`[BOTTLE] Plugin loaded: ${msg.name} v${msg.version}`, 'info');
+      addLog(`[BOTTLE] Loaded: ${msg.name} v${msg.version}`, 'info');
       notify(`Plugin loaded: ${msg.name}`);
       renderPlugins();
+      updateSidebarStats();
       break;
     case 'offer-ready':
       state.pendingOffer = { id: msg.id, offer: msg.offer };
       if ($('offer-code')) $('offer-code').textContent = msg.offer || '(generating…)';
       $('offer-section')?.style && ($('offer-section').style.display = '');
       addLog('WebRTC offer ready — share with player.', 'info');
+      notify('Offer ready — go to Connect tab');
       break;
     case 'stopped':
-      addLog('Server shut down cleanly.', 'warn');
+      addLog('Server shut down cleanly.', 'system');
       break;
   }
 }
 
 function chatToPlain(c) {
   if (typeof c === 'string') return c;
-  let t = (c.text||'').replace(/§./g,'');
+  let t = (c.text || '').replace(/§./g, '');
   if (c.extra) for (const x of c.extra) t += chatToPlain(x);
   return t;
 }
 
-// ── Sidebar stats ──────────────────────────────────────────
-function updateSidebarStats() {
-  const s = state.stats;
-  const set = (id, v) => { const el=$(id); if(el) el.textContent=v; };
-  set('stat-tps',     s.tps    != null ? s.tps.toFixed(1)             : '—');
-  set('stat-players', s.players != null ? `${s.players}/${s.max}`     : '—');
-  set('stat-uptime',  s.uptime  != null ? fmtUptime(s.uptime)         : '—');
-  set('stat-seed',    s.seed    != null ? String(s.seed)              : '—');
-  set('stat-plugins', s.plugins != null ? String(s.plugins)           : '—');
-}
-
+// ── UI updates ──────────────────────────────────────────────
 function updateServerControls() {
   const r = state.serverRunning;
+  // Topbar buttons
   $('btn-start-server').style.display = r ? 'none' : '';
   $('btn-stop-server').style.display  = r ? '' : 'none';
+  // Hero buttons
+  $('hero-start').style.display = r ? 'none' : '';
+  $('hero-stop').style.display  = r ? '' : 'none';
+  // Hero state badge
+  const heroState = $('hero-state');
+  if (heroState) {
+    heroState.textContent = r ? 'RUNNING' : 'STOPPED';
+    heroState.className   = 'hero-state ' + (r ? 'running' : 'stopped');
+  }
+  // Hero stats row
+  const heroStats = $('hero-stats');
+  if (heroStats) heroStats.style.display = r ? '' : 'none';
+  // Status dot + text
   qs('.status-dot')?.classList.toggle('online', r);
-  qs('.status-text').textContent = r ? 'Server Running' : 'Stopped';
+  const txt = qs('#topbar-status') || qs('.status-text');
+  if (txt) txt.textContent = r ? 'Running' : 'Stopped';
 }
 
-// ── Console ────────────────────────────────────────────────
+function updateSidebarStats() {
+  const s = state.stats;
+  const set = (id, v) => { const el=$(id); if(el) el.textContent = v; };
+  set('ss-tps',     s.tps     != null ? s.tps.toFixed(1)          : '—');
+  set('ss-players', s.players != null ? `${s.players}/${s.max}`   : '—');
+  set('ss-uptime',  s.uptime  != null ? fmtUptime(s.uptime)       : '—');
+  set('ss-plugins', s.plugins != null ? String(s.plugins)         : '—');
+
+  // World tab
+  set('world-tps',     s.tps     != null ? s.tps.toFixed(2)         : '—');
+  set('world-players', s.players != null ? `${s.players}/${s.max}`  : '—');
+  set('world-uptime',  s.uptime  != null ? fmtUptime(s.uptime)      : '—');
+  set('world-tick',    s.tick    != null ? String(s.tick)           : '—');
+  set('world-seed',    s.seed    != null ? String(s.seed)           : '—');
+  set('world-plugins', s.plugins != null ? String(s.plugins)        : '—');
+}
+
+function updateHeroStats() {
+  const s = state.stats;
+  const set = (id, v) => { const el=$(id); if(el) el.textContent = v; };
+  set('h-tps',        s.tps     != null ? s.tps.toFixed(1)  : '—');
+  set('h-players',    s.players != null ? String(s.players)  : String(state.players.size));
+  set('h-maxplayers', s.max     != null ? String(s.max)      : '20');
+  set('h-uptime',     s.uptime  != null ? fmtUptime(s.uptime) : '—');
+  set('h-seed',       s.seed    != null ? String(s.seed)     : '—');
+}
+
+// ── Console ─────────────────────────────────────────────────
 function sendConsoleCommand() {
   const input = $('console-input');
   const cmd = input.value.trim();
   if (!cmd) return;
-  if (!window.serverWorker) { notify('Start the server first!', 'err'); return; }
-  addLog('> ' + cmd, 'info');
+  if (!window.serverWorker) { notify('Start the server first', 'warn'); return; }
+  addLog('> ' + cmd, 'system');
   window.serverWorker.postMessage({ type:'command', data: cmd });
   input.value = '';
 }
 $('console-send').addEventListener('click', sendConsoleCommand);
 $('console-input').addEventListener('keydown', e => { if (e.key==='Enter') sendConsoleCommand(); });
 
-// ── Start / Stop ───────────────────────────────────────────
+// ── Start / Stop (all buttons) ──────────────────────────────
 $('btn-start-server').addEventListener('click', startServerWorker);
 $('btn-stop-server').addEventListener('click', stopServer);
+$('hero-start').addEventListener('click', startServerWorker);
+$('hero-stop').addEventListener('click', stopServer);
 
-// ── Players ────────────────────────────────────────────────
+// ── Players ─────────────────────────────────────────────────
 function renderPlayers() {
   const panel = $('players-panel');
   if (!state.players.size) {
-    panel.innerHTML = '<div class="empty-state">No players online.<br>Start the server and connect to see players here.</div>';
+    panel.innerHTML = `<div class="empty-state">
+      <div class="es-icon">👤</div>
+      <strong>No players online</strong>
+      Start the server and connect to see players here.
+    </div>`;
     return;
   }
+  const gm = ['Survival','Creative','Adventure','Spectator'];
   panel.innerHTML = [...state.players.values()].map(p => `
     <div class="player-card">
-      <div class="player-avatar">&#x1F9D1;</div>
+      <div class="player-avatar">👤</div>
       <div class="player-info">
         <div class="player-name">${escHtml(p.username)}</div>
-        <div class="player-meta">UUID: ${p.uuid.slice(0,16)}… | MC ${escHtml(p.version||'?')} | p${p.proto||'?'}</div>
+        <div class="player-meta">MC ${escHtml(p.version||'?')} · proto ${p.proto||'?'} · UUID ${p.uuid.slice(0,8)}…</div>
+        <div class="player-badges">
+          ${p.isOp ? '<span class="pbadge op">OP</span>' : ''}
+          <span class="pbadge ${['survival','creative','',''][p.gamemode]||'survival'}">${gm[p.gamemode]||gm[0]}</span>
+        </div>
       </div>
       <div class="player-actions">
-        <button class="act-btn" onclick="sendCmd('say Hello, ${escHtml(p.username)}!')">Ping</button>
+        <button class="act-btn green" onclick="sendCmd('say Hello, ${escHtml(p.username)}!')">Ping</button>
         <button class="act-btn" onclick="sendCmd('op ${escHtml(p.username)}')">OP</button>
+        <button class="act-btn" onclick="promptTeleport('${escHtml(p.username)}')">TP</button>
         <button class="act-btn red" onclick="sendCmd('kick ${escHtml(p.username)} Kicked by admin')">Kick</button>
       </div>
     </div>`).join('');
 }
 
+window.promptTeleport = function(name) {
+  const coords = prompt(`Teleport ${name} to (x y z):`, '0 64 0');
+  if (!coords) return;
+  const [x,y,z] = coords.trim().split(/\s+/);
+  if (x&&y&&z) sendCmd(`tp ${name} ${x} ${y} ${z}`);
+};
+
 function sendCmd(cmd) {
-  if (!window.serverWorker) { notify('Server not running', 'err'); return; }
+  if (!window.serverWorker) { notify('Server not running', 'warn'); return; }
   window.serverWorker.postMessage({ type:'command', data: cmd });
-  addLog('> ' + cmd, 'info');
+  addLog('> ' + cmd, 'system');
 }
 window.sendCmd = sendCmd;
 
-// ── Plugins (BOTTLE) ──────────────────────────────────────
+// ── Plugins ─────────────────────────────────────────────────
 function renderPlugins() {
   const panel = $('plugins-list');
   if (!panel) return;
   const plugins = BOTTLE.getPlugins().filter(p => !p.builtin);
   if (!plugins.length) {
-    panel.innerHTML = '<div class="empty-state" style="padding:20px">No user plugins loaded.<br>Drop a .js plugin file below.</div>';
+    panel.innerHTML = `<div class="empty-state" style="padding:24px">
+      <div class="es-icon">◆</div>
+      <strong>No user plugins loaded</strong>
+      Drop a <code style="font-family:var(--mono);color:var(--accent)">.js</code> file below or click <strong>+ Load Plugin</strong>.
+    </div>`;
     return;
   }
   panel.innerHTML = plugins.map(p => `
     <div class="plugin-card">
-      <div class="plugin-icon">&#9670;</div>
+      <div class="plugin-icon">◆</div>
       <div class="plugin-info">
         <div class="plugin-name">${escHtml(p.name)}</div>
-        <div class="plugin-desc">${escHtml(p.description)}</div>
-        <div class="plugin-ver">v${escHtml(p.version)} by ${escHtml(p.author)} · BOTTLE API</div>
+        <div class="plugin-desc">${escHtml(p.description || '—')}</div>
+        <div class="plugin-ver">
+          v${escHtml(p.version)}
+          <span class="plugin-author">by ${escHtml(p.author || 'Unknown')}</span>
+        </div>
       </div>
-      <button class="plugin-toggle ${p.enabled?'on':''}" onclick="togglePlugin('${p.id}')">
-        ${p.enabled?'Enabled':'Disabled'}
+      <button class="plugin-toggle ${p.enabled?'on':''}" onclick="togglePlugin('${escHtml(p.id)}')">
+        ${p.enabled ? 'Enabled' : 'Disabled'}
       </button>
     </div>`).join('');
 }
+
 window.togglePlugin = function(id) {
   const on = BOTTLE.toggle(id);
-  notify((on?'Enabled':'Disabled') + ' plugin: ' + id);
+  notify((on ? 'Enabled' : 'Disabled') + ': ' + id);
   renderPlugins();
 };
 
@@ -419,62 +597,45 @@ async function loadPluginFile(file) {
   } catch(e) { notify('Plugin error: ' + e.message, 'err'); }
 }
 
-// ── WebRTC ─────────────────────────────────────────────────
+// ── WebRTC ──────────────────────────────────────────────────
 $('btn-create-offer')?.addEventListener('click', () => {
-  if (!window.serverWorker) { notify('Start the server first!', 'err'); return; }
-  if ($('offer-code')) $('offer-code').textContent = 'Generating…';
+  if (!window.serverWorker) { notify('Start the server first', 'warn'); return; }
+  if ($('offer-code')) $('offer-code').textContent = 'Generating… (up to 6s)';
   window.serverWorker.postMessage({ type:'create-offer' });
-});
-$('btn-copy-offer')?.addEventListener('click', () => {
-  const t = $('offer-code')?.textContent;
-  if (t) navigator.clipboard.writeText(t).then(() => notify('Offer copied!')).catch(() => notify('Copy failed', 'err'));
+  addLog('Generating WebRTC offer…', 'system');
 });
 $('btn-accept-answer')?.addEventListener('click', () => {
   const ans = $('answer-input')?.value.trim();
   if (!ans || !state.pendingOffer) { notify('Paste player answer first', 'err'); return; }
   window.serverWorker?.postMessage({ type:'accept-answer', data:{ id: state.pendingOffer.id, answer: ans } });
   notify('Answer submitted…');
+  addLog('WebRTC answer submitted — waiting for connection.', 'system');
 });
 
-// Copy connection URL buttons
-$('btn-copy-wss')?.addEventListener('click', () => {
-  const t = $('wss-connect-url')?.textContent;
-  if (t) navigator.clipboard.writeText(t).then(() => notify('URL copied!')).catch(() => notify('Copy failed', 'err'));
-});
-$('btn-copy-ws')?.addEventListener('click', () => {
-  const t = $('ws-connect-url')?.textContent;
-  if (t) navigator.clipboard.writeText(t.split(' ')[0]).then(() => notify('URL copied!')).catch(() => notify('Copy failed', 'err'));
-});
-
-// ── World/Config stats refresh ─────────────────────────────
-function updateWorldTab() {
-  const s = state.stats;
-  const set = (id,v) => { const el=$(id); if(el) el.textContent=v; };
-  set('world-seed',    s.seed    != null ? String(s.seed)          : '—');
-  set('world-players', s.players != null ? `${s.players}/${s.max}` : '—');
-  set('world-tps',     s.tps     != null ? s.tps.toFixed(2)        : '—');
-  set('world-uptime',  s.uptime  != null ? fmtUptime(s.uptime)     : '—');
-  set('world-tick',    s.tick    != null ? String(s.tick)          : '—');
-  set('world-plugins', s.plugins != null ? String(s.plugins)       : '—');
-}
+// ── Stats polling ────────────────────────────────────────────
 setInterval(() => {
   if (window.serverWorker && state.serverRunning) {
     window.serverWorker.postMessage({ type:'get-stats' });
-    updateWorldTab();
   }
-}, 5000);
+}, 4000);
 
-// ── Service Worker ─────────────────────────────────────────
+// ── Service Worker ───────────────────────────────────────────
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 
-// ── Init ──────────────────────────────────────────────────
-connectRelay(); // Start relay immediately (auto-reconnects if server not up yet)
+// ── Init ─────────────────────────────────────────────────────
+applyModeUI();
 showTab('console');
 updateServerControls();
 updateRelayUI();
 renderPlugins();
-addLog('EaglerNet Dashboard ready. Click "Start Server" to launch the browser MC server.', 'info');
-addLog('Plugin Loader: BOTTLE. Versions: 1.5.2 → 1.12.2. Use the Plugin Loader tab to add plugins.', 'info');
-addLog('Built-in: WorldEdit (//pos1 //set //copy), WorldGuard (/rg define), Multiverse (/mv tp)', 'info');
+
+if (!state.isStaticMode) {
+  // Try relay early; it will retry silently until server is up
+  connectRelay();
+  addLog('EaglerNet ready — click Start Server to launch. WS relay will connect automatically.', 'system');
+} else {
+  addLog('EaglerNet ready (static mode) — click Start Server. WebRTC connections available via the Connect tab.', 'system');
+}
+addLog(`Versions: 1.5.2 → 1.12.2  |  Plugins: WorldEdit, WorldGuard, Multiverse (built-in)`, 'system');

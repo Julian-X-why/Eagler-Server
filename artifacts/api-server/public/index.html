@@ -2,54 +2,117 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#4ecca3">
-  <title>EaglerNet | MC 1.5.2–1.12.2 Server</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#00d4aa">
+  <meta name="description" content="EaglerNet — MC 1.5.2–1.12.2 browser server. Pure JS, no install needed.">
+  <title>EaglerNet | Browser MC Server</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/main.css?v=6">
 </head>
 <body>
 <div id="app">
 
-  <!-- ── Topbar ─────────────────────────────────────── -->
+  <!-- ── Topbar ───────────────────────────────────────── -->
   <header id="topbar">
-    <div class="logo">EAGLERNET <span>1.5.2–1.12.2 · Plugin Loader</span></div>
+    <button class="menu-btn" id="btn-menu" aria-label="Menu">☰</button>
+    <a class="logo" href="#">EAGLERNET <span class="logo-sub">1.5.2 – 1.12.2</span></a>
+    <div class="topbar-spacer"></div>
     <div class="topbar-status">
-      <div class="status-dot"></div>
-      <span class="status-text">Stopped</span>
+      <div class="status-dot" id="topbar-dot"></div>
+      <span class="status-text" id="topbar-status">Stopped</span>
     </div>
-    <button class="topbar-btn" id="btn-start-server">&#9654; Start Server</button>
-    <button class="topbar-btn danger" id="btn-stop-server" style="display:none">&#9646;&#9646; Stop</button>
+    <button class="topbar-btn" id="btn-start-server">▶ Start</button>
+    <button class="topbar-btn danger" id="btn-stop-server" style="display:none">■ Stop</button>
   </header>
 
-  <!-- ── Sidebar ────────────────────────────────────── -->
+  <!-- Sidebar overlay (mobile) -->
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <!-- ── Sidebar ──────────────────────────────────────── -->
   <aside id="sidebar">
     <div class="sidebar-section">
-      <div class="sidebar-label">Navigation</div>
-      <button class="nav-btn active" data-tab="console"><span class="icon">&#xBB;</span> Console</button>
-      <button class="nav-btn" data-tab="players"><span class="icon">&#x1F9D1;</span> Players</button>
-      <button class="nav-btn" data-tab="plugins"><span class="icon">&#x2666;</span> Plugin Loader</button>
-      <button class="nav-btn" data-tab="connect"><span class="icon">&#x1F517;</span> Connect</button>
-      <button class="nav-btn" data-tab="world"><span class="icon">&#x1F30D;</span> World &amp; Config</button>
+      <div class="sidebar-label">Dashboard</div>
+      <button class="nav-btn active" data-tab="console"><span class="icon">»</span> Console</button>
+      <button class="nav-btn" data-tab="players"><span class="icon">👤</span> Players</button>
+      <button class="nav-btn" data-tab="plugins"><span class="icon">◆</span> Plugin Loader</button>
+      <button class="nav-btn" data-tab="connect"><span class="icon">🔗</span> Connect</button>
+      <button class="nav-btn" data-tab="world"><span class="icon">🌍</span> World & Config</button>
     </div>
+
     <div class="sidebar-section">
       <div class="sidebar-label">Live Stats</div>
-      <div class="server-stat"><div class="label">TPS</div><strong id="stat-tps">—</strong></div>
-      <div class="server-stat"><div class="label">Players</div><strong id="stat-players">—</strong></div>
-      <div class="server-stat"><div class="label">Uptime</div><strong id="stat-uptime">—</strong></div>
-      <div class="server-stat"><div class="label">Seed</div><strong id="stat-seed" style="font-size:.72rem;word-break:break-all">—</strong></div>
-      <div class="server-stat"><div class="label">Plugins</div><strong id="stat-plugins">—</strong></div>
+      <div class="stat-row">
+        <div class="stat-item"><div class="s-label">TPS</div><div class="s-val accent" id="ss-tps">—</div></div>
+        <div class="stat-item"><div class="s-label">Players</div><div class="s-val" id="ss-players">—</div></div>
+        <div class="stat-item"><div class="s-label">Uptime</div><div class="s-val" id="ss-uptime">—</div></div>
+        <div class="stat-item"><div class="s-label">Plugins</div><div class="s-val" id="ss-plugins">—</div></div>
+      </div>
     </div>
-    <div style="padding:10px 14px;margin-top:auto;font-size:.65rem;color:var(--dim);line-height:1.8">
-      Pure Browser JS<br>No Node.js for game logic<br>BOTTLE Plugin Loader<br>EaglercraftX Compatible
+
+    <div class="sidebar-section">
+      <div class="sidebar-footer">
+        <div class="mode-badge" id="mode-badge">⚡ Loading…</div><br>
+        Pure browser JS<br>
+        No Node.js for game logic<br>
+        BOTTLE Plugin Loader<br>
+        EaglercraftX compatible
+      </div>
     </div>
   </aside>
 
-  <!-- ── Main ───────────────────────────────────────── -->
+  <!-- ── Main ─────────────────────────────────────────── -->
   <main id="main">
 
-    <!-- ── Console Tab ───────────────────────────────── -->
+    <!-- ════════════════════════════════
+         Console Tab
+    ════════════════════════════════ -->
     <div class="tab-content active" id="tab-console">
+
+      <!-- Server Hero -->
+      <div class="server-hero" id="server-hero">
+        <div class="hero-top">
+          <div class="hero-name">
+            <span id="hero-server-name">EaglerNet Server</span>
+            <span class="hero-state stopped" id="hero-state">STOPPED</span>
+          </div>
+          <div class="hero-actions">
+            <button class="topbar-btn" id="hero-start" style="font-size:.82rem">▶ Start Server</button>
+            <button class="topbar-btn danger" id="hero-stop" style="display:none;font-size:.82rem">■ Stop</button>
+          </div>
+        </div>
+        <div class="hero-stats" id="hero-stats" style="display:none">
+          <div class="hstat"><span class="hstat-icon">⚡</span><span class="hstat-val" id="h-tps">20.0</span><span class="hstat-label"> TPS</span></div>
+          <div class="hstat"><span class="hstat-icon">👤</span><span class="hstat-val" id="h-players">0</span><span class="hstat-label"> / <span id="h-maxplayers">20</span></span></div>
+          <div class="hstat"><span class="hstat-icon">⏱</span><span class="hstat-val" id="h-uptime">0s</span></div>
+          <div class="hstat"><span class="hstat-icon">🌱</span><span class="hstat-val" id="h-seed" style="max-width:110px;overflow:hidden;text-overflow:ellipsis">—</span></div>
+          <div class="hstat" id="h-relay-hstat" style="display:none">
+            <span class="hstat-icon">🔌</span>
+            <span class="hstat-val" id="h-relay-state">WS</span>
+            <span class="hstat-label"> relay</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Static mode warning (shown only on static hosts) -->
+      <div class="static-banner" id="static-banner" style="display:none">
+        <span class="sb-icon">⚠</span>
+        <div>
+          <strong>Static hosting detected</strong>
+          <span>No WS relay available — WebRTC peer-to-peer connections still work. For IP-based connections, self-host with Node.js (<code>pnpm run dev</code>).</span>
+        </div>
+      </div>
+
+      <!-- Getting Started banner (dismissed after first start) -->
+      <div class="gs-banner" id="gs-banner">
+        <h4>🚀 Getting Started <button class="gs-dismiss" id="gs-dismiss" title="Dismiss">×</button></h4>
+        <div class="gs-steps">
+          <div class="gs-step">Click <strong>Start Server</strong> above to launch the browser MC server.</div>
+          <div class="gs-step">Go to <strong>Connect</strong> to get the WebRTC invite or WS URL for players.</div>
+          <div class="gs-step">Players open <strong>EaglercraftX</strong> → Multiplayer → Direct Connect and paste the URL.</div>
+          <div class="gs-step">Use the <strong>Plugin Loader</strong> tab to add and manage server plugins.</div>
+        </div>
+      </div>
+
       <div id="console-log"></div>
       <div class="console-input-row">
         <input type="text" id="console-input"
@@ -59,172 +122,236 @@
       </div>
     </div>
 
-    <!-- ── Players Tab ───────────────────────────────── -->
+    <!-- ════════════════════════════════
+         Players Tab
+    ════════════════════════════════ -->
     <div class="tab-content" id="tab-players">
-      <div style="padding:14px 16px 0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <h2 style="font-size:.95rem;color:var(--accent)">Online Players</h2>
-        <div style="display:flex;gap:6px">
-          <button class="btn" onclick="sendCmd('list')">Refresh</button>
-          <button class="btn" onclick="sendCmd('say Welcome everyone!')">Say Welcome</button>
+      <div class="tab-header">
+        <h2>Online Players</h2>
+        <div class="tab-header-actions">
+          <button class="btn sm" onclick="sendCmd('list')">Refresh</button>
+          <button class="btn sm primary" onclick="sendCmd('say Welcome everyone!')">Broadcast</button>
         </div>
       </div>
-      <div id="players-panel" style="padding:12px 16px;flex:1;overflow-y:auto">
-        <div class="empty-state">Start the server to see players.</div>
+      <div id="players-panel">
+        <div class="empty-state">
+          <div class="es-icon">👤</div>
+          <strong>No players online</strong>
+          Start the server and connect to see players here.
+        </div>
       </div>
     </div>
 
-    <!-- ── Plugin Loader Tab ────────────────────────── -->
+    <!-- ════════════════════════════════
+         Plugin Loader Tab
+    ════════════════════════════════ -->
     <div class="tab-content" id="tab-plugins">
-      <div style="padding:14px 16px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
-        <div style="flex:1">
-          <h2 style="font-size:.95rem;color:var(--accent)">Plugin Loader</h2>
-          <div style="font-size:.72rem;color:var(--dim);margin-top:2px">
-            Drop in any <code>.js</code> plugin — calls <code>BOTTLE.register()</code>
-          </div>
+      <div class="plugins-header">
+        <div class="plugins-header-info">
+          <h2>Plugin Loader</h2>
+          <p>Drop in any <code style="font-family:var(--mono);color:var(--accent);font-size:.72rem;background:rgba(0,212,170,.1);padding:1px 5px;border-radius:4px">.js</code> file that calls <code style="font-family:var(--mono);color:var(--accent);font-size:.72rem;background:rgba(0,212,170,.1);padding:1px 5px;border-radius:4px">BOTTLE.register()</code> — loads live into the running server.</p>
         </div>
-        <button class="btn primary" id="btn-load-plugin">&#43; Load Plugin</button>
+        <button class="btn primary" id="btn-load-plugin">+ Load Plugin</button>
         <input type="file" id="plugin-file-input" accept=".js" multiple style="display:none">
       </div>
 
-      <!-- Built-in plugins section -->
-      <div style="padding:10px 16px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.2)">
-        <div style="font-size:.68rem;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Built-in Plugins</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap" id="builtin-badges">
-          <div class="builtin-badge on" data-id="eaglercraftxserver">EaglercraftXServer</div>
-          <div class="builtin-badge off" data-id="chatfilter">ChatFilter</div>
-          <div class="builtin-badge off" data-id="anticheat">AntiCheat</div>
-          <div class="builtin-badge on" data-id="worldedit">WorldEdit</div>
-          <div class="builtin-badge on" data-id="worldguard">WorldGuard</div>
-          <div class="builtin-badge on" data-id="multiverse">Multiverse</div>
+      <div class="builtins-section">
+        <div class="builtins-label">Built-in Plugins</div>
+        <div class="builtins-grid" id="builtin-badges">
+          <div class="builtin-tile on" data-id="eaglercraftxserver">
+            <span class="bt-dot"></span>
+            <span class="bt-name">EaglercraftXServer</span>
+            <span class="bt-desc">WebRTC + skins</span>
+          </div>
+          <div class="builtin-tile off" data-id="chatfilter">
+            <span class="bt-dot"></span>
+            <span class="bt-name">ChatFilter</span>
+            <span class="bt-desc">spam / profanity</span>
+          </div>
+          <div class="builtin-tile off" data-id="anticheat">
+            <span class="bt-dot"></span>
+            <span class="bt-name">AntiCheat</span>
+            <span class="bt-desc">movement checks</span>
+          </div>
+          <div class="builtin-tile on" data-id="worldedit">
+            <span class="bt-dot"></span>
+            <span class="bt-name">WorldEdit</span>
+            <span class="bt-desc">//set //copy //paste</span>
+          </div>
+          <div class="builtin-tile on" data-id="worldguard">
+            <span class="bt-dot"></span>
+            <span class="bt-name">WorldGuard</span>
+            <span class="bt-desc">/rg define/claim</span>
+          </div>
+          <div class="builtin-tile on" data-id="multiverse">
+            <span class="bt-dot"></span>
+            <span class="bt-name">Multiverse</span>
+            <span class="bt-desc">/mv create/tp</span>
+          </div>
         </div>
-        <div style="font-size:.7rem;color:var(--dim);margin-top:8px">Toggle in <code style="color:var(--accent)">config.js</code> → <code style="color:var(--accent)">bottle.builtins</code></div>
       </div>
 
-      <div id="plugins-list" style="padding:12px 16px;flex:1;overflow-y:auto">
-        <div class="empty-state" style="padding:24px">No user plugins loaded yet.</div>
-      </div>
-      <div style="padding:12px 16px;border-top:1px solid var(--border)">
-        <div class="drop-zone" id="plugin-drop-zone">
-          &#x2666; Drop <code>.js</code> plugin files here — calls <code>BOTTLE.register(manifest, hooks)</code>
+      <div id="plugins-list">
+        <div class="empty-state" style="padding:28px">
+          <div class="es-icon">◆</div>
+          <strong>No user plugins loaded</strong>
+          Drop a <code style="font-family:var(--mono);color:var(--accent)">.js</code> file below or click <strong>+ Load Plugin</strong>.
         </div>
+      </div>
+
+      <div class="drop-zone" id="plugin-drop-zone">
+        ◆ Drop <code>.js</code> plugin files here &mdash; or click to browse<br>
+        <span style="font-size:.7rem;opacity:.7">Plugin must call <code>BOTTLE.register(manifest, hooks)</code></span>
       </div>
     </div>
 
-    <!-- ── Connect Tab ───────────────────────────────── -->
+    <!-- ════════════════════════════════
+         Connect Tab
+    ════════════════════════════════ -->
     <div class="tab-content" id="tab-connect">
       <div id="connect-panel">
 
-        <!-- ── IP / WS Relay ─────────────────────────────── -->
-        <div class="card">
-          <h3>&#x1F310; Connect by IP Address <span style="font-size:.72rem;font-weight:400;color:var(--dim)">(same network / LAN)</span></h3>
-          <p>Players on the same network can connect directly using a WebSocket address — no SDP exchange needed. The relay is handled by the server automatically.</p>
-          <div style="display:flex;align-items:center;gap:10px;margin:10px 0 4px">
-            <span style="font-size:.75rem;color:var(--dim)">Relay status:</span>
-            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f44336" id="relay-dot"></span>
-            <span style="font-size:.78rem" id="relay-status-text">Disconnected</span>
-          </div>
-          <div style="margin-top:12px">
-            <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">&#x1F310; Internet URL <span style="color:var(--dim)">(via Replit proxy, works anywhere)</span></div>
-            <div style="display:flex;gap:6px;align-items:center">
-              <code class="code-block" id="wss-connect-url" style="flex:1;padding:6px 10px;font-size:.75rem">—</code>
-              <button class="btn" id="btn-copy-wss">Copy</button>
+        <!-- Mode summary -->
+        <div class="card" id="connect-mode-card">
+          <div class="card-head">
+            <div class="card-icon teal">🌐</div>
+            <div>
+              <h3>Connection Mode <em id="connect-mode-label">detecting…</em></h3>
             </div>
           </div>
-          <div style="margin-top:10px">
-            <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">&#x1F4F6; LAN URL <span style="color:var(--dim)">(same network — replace with your machine's local IP)</span></div>
-            <div style="display:flex;gap:6px;align-items:center">
-              <code class="code-block" id="ws-connect-url" style="flex:1;padding:6px 10px;font-size:.75rem">ws://YOUR_LOCAL_IP:8080/mc</code>
-              <button class="btn" id="btn-copy-ws">Copy</button>
-            </div>
-          </div>
-          <div style="font-size:.72rem;color:var(--dim);margin-top:12px;line-height:1.6">
-            In EaglercraftX: <strong>Multiplayer → Direct Connect</strong> → paste the URL above.<br>
-            Start the server first — the relay connects automatically when the server starts.
-          </div>
+          <div id="connect-mode-desc" style="font-size:.78rem;color:var(--text2);line-height:1.7"></div>
         </div>
 
-        <!-- ── WebRTC ─────────────────────────────────────── -->
+        <!-- WS Relay (shown only when relay is available) -->
+        <div id="relay-card" class="card">
+          <div class="card-head">
+            <div class="card-icon teal">🔌</div>
+            <div>
+              <h3>Connect by IP / URL <em>easiest for LAN</em></h3>
+            </div>
+          </div>
+          <div class="relay-status-row">
+            <span style="width:7px;height:7px;border-radius:50%;background:var(--dim);display:inline-block;flex-shrink:0;transition:.3s" id="relay-dot"></span>
+            <span style="font-size:.75rem;color:var(--text2)" id="relay-status-text">Disconnected</span>
+            <span style="font-size:.68rem;color:var(--dim);margin-left:auto">Connects automatically when server starts</span>
+          </div>
+          <div class="url-label">🌐 Internet URL <span style="color:var(--dim)">(works from anywhere via proxy)</span></div>
+          <div class="url-field">
+            <code class="code-block" id="wss-connect-url">—</code>
+            <button class="copy-btn" data-copy="wss-connect-url">Copy</button>
+          </div>
+          <div class="url-label" style="margin-top:8px">📶 LAN URL <span style="color:var(--dim)">(replace with your machine's local IP)</span></div>
+          <div class="url-field">
+            <code class="code-block" id="ws-connect-url">ws://YOUR_LOCAL_IP:8080/mc</code>
+            <button class="copy-btn" data-copy="ws-connect-url">Copy</button>
+          </div>
+          <p style="margin-top:10px;font-size:.73rem;color:var(--dim)">
+            In EaglercraftX: <strong style="color:var(--text)">Multiplayer → Direct Connect</strong> → paste URL → Connect.
+          </p>
+        </div>
+
+        <!-- WebRTC -->
         <div class="card">
-          <h3>&#x1F4E1; WebRTC Offer / Answer <span style="font-size:.72rem;font-weight:400;color:var(--dim)">(works across internet)</span></h3>
-          <p>For players who cannot reach this server by URL. Creates a peer-to-peer session — no port forwarding needed, works on restricted networks.</p>
-          <ol class="steps" style="margin:8px 0 10px">
-            <li>Start the server, then click <strong>Generate Offer</strong>.</li>
-            <li>Copy the offer code — send it to the player (Discord, chat, etc).</li>
-            <li>Player opens EaglercraftX → Direct Connect → WebRTC → pastes offer.</li>
-            <li>Player copies back an <em>answer</em> — paste it below and submit.</li>
+          <div class="card-head">
+            <div class="card-icon blue">📡</div>
+            <div>
+              <h3>WebRTC Peer-to-Peer <em>works everywhere, no port forwarding</em></h3>
+            </div>
+          </div>
+          <ol class="steps" style="margin-bottom:14px">
+            <li>Start the server, then click <strong>Generate Offer</strong> below.</li>
+            <li>Copy the offer code and send it to the player (Discord, email, etc.).</li>
+            <li>Player opens <strong>EaglercraftX → Multiplayer → Direct Connect → WebRTC</strong> and pastes the offer.</li>
+            <li>Player copies the <em>answer</em> back to you — paste it below and click Submit.</li>
           </ol>
           <button class="btn primary" id="btn-create-offer">Generate Offer</button>
           <div id="offer-section" style="display:none;margin-top:14px">
-            <div style="font-size:.78rem;color:var(--dim);margin-bottom:6px">&#x1F4CB; Offer SDP — share this with the player:</div>
-            <pre class="code-block" id="offer-code" style="max-height:140px">—</pre>
+            <div class="url-label">📋 Offer SDP — share this with the player:</div>
+            <pre class="code-block" id="offer-code" style="white-space:pre-wrap">—</pre>
             <div class="btn-row">
-              <button class="btn accent" id="btn-copy-offer">&#x1F4CB; Copy Offer</button>
+              <button class="copy-btn" data-copy="offer-code">📋 Copy Offer</button>
             </div>
-            <div style="font-size:.78rem;color:var(--dim);margin:14px 0 6px">&#x1F4E8; Player Answer SDP — paste here:</div>
-            <textarea class="code-block" id="answer-input" placeholder="Paste the player's answer SDP here…" rows="5"></textarea>
-            <div class="btn-row">
-              <button class="btn primary" id="btn-accept-answer">&#x2714; Submit Answer</button>
-            </div>
+            <div class="url-label" style="margin:14px 0 4px">📨 Player Answer — paste here:</div>
+            <textarea class="code-block" id="answer-input" placeholder="Paste the player's answer SDP here…" rows="4"></textarea>
+            <div class="btn-row"><button class="btn primary" id="btn-accept-answer">✔ Submit Answer</button></div>
           </div>
         </div>
 
+        <!-- Same-browser / testing -->
         <div class="card">
-          <h3>&#x1F4BB; Same-Browser / LAN Testing</h3>
-          <p>Open another tab with the same URL to test locally. The server runs in this tab's Web Worker; the other tab acts as a client.</p>
+          <div class="card-head">
+            <div class="card-icon yellow">💻</div>
+            <div><h3>Local Testing <em>same browser / LAN</em></h3></div>
+          </div>
+          <p>Open another tab pointing to the same URL to test locally. This tab runs the server; the other tab acts as a client connecting via WebRTC.</p>
           <div class="btn-row">
-            <button class="btn" onclick="navigator.clipboard.writeText(location.href).then(()=>notify('URL copied!'))">&#x1F4CB; Copy Server URL</button>
+            <button class="btn" onclick="copyText(location.href);notify('URL copied!')">📋 Copy Server URL</button>
             <button class="btn" onclick="window.open(location.href,'_blank')">Open New Tab</button>
           </div>
         </div>
 
+        <!-- GitHub.io / static hosting guide -->
+        <div class="card" id="static-guide-card" style="display:none">
+          <div class="card-head">
+            <div class="card-icon yellow">📦</div>
+            <div><h3>Static Hosting Guide <em>GitHub Pages, Netlify, etc.</em></h3></div>
+          </div>
+          <p>You're running EaglerNet from a static host. WebRTC works fine — the IP/WS relay requires the Node.js server.</p>
+          <ol class="steps">
+            <li>Copy the <code style="font-family:var(--mono);color:var(--accent)">public/</code> folder to any static host (GitHub Pages, Netlify, Cloudflare Pages, etc.).</li>
+            <li>For IP connections: clone the repo and run <code style="font-family:var(--mono);color:var(--accent)">pnpm install &amp;&amp; pnpm run dev</code> on a server.</li>
+            <li>Players without IP access can always connect via <strong>WebRTC Offer/Answer</strong> above.</li>
+          </ol>
+        </div>
+
       </div>
     </div>
 
-    <!-- ── World & Config Tab ─────────────────────────── -->
+    <!-- ════════════════════════════════
+         World & Config Tab
+    ════════════════════════════════ -->
     <div class="tab-content" id="tab-world">
       <div id="world-panel">
 
-        <!-- Live stats -->
         <div class="info-grid">
-          <div class="info-card"><div class="label">Seed</div><div class="value" id="world-seed" style="font-size:.95rem">—</div><div class="sub">World gen seed</div></div>
+          <div class="info-card"><div class="label">TPS</div><div class="value" id="world-tps">—</div><div class="sub">Target: 20</div></div>
           <div class="info-card"><div class="label">Players</div><div class="value" id="world-players">—</div><div class="sub">Online / Max</div></div>
-          <div class="info-card"><div class="label">TPS</div><div class="value" id="world-tps">—</div><div class="sub">Max 20</div></div>
-          <div class="info-card"><div class="label">Uptime</div><div class="value" id="world-uptime">—</div><div class="sub">Since start</div></div>
-          <div class="info-card"><div class="label">Tick</div><div class="value" id="world-tick">—</div><div class="sub">Total elapsed</div></div>
+          <div class="info-card"><div class="label">Uptime</div><div class="value sm" id="world-uptime">—</div><div class="sub">Since start</div></div>
+          <div class="info-card"><div class="label">Tick</div><div class="value sm" id="world-tick">—</div><div class="sub">Total ticks</div></div>
+          <div class="info-card"><div class="label">Seed</div><div class="value sm" id="world-seed" style="font-size:.78rem;word-break:break-all">—</div><div class="sub">World gen seed</div></div>
           <div class="info-card"><div class="label">Plugins</div><div class="value" id="world-plugins">—</div><div class="sub">Loaded</div></div>
         </div>
 
-        <!-- Server config -->
         <div class="card">
-          <h3>Server Configuration <span style="font-size:.72rem;color:var(--dim);font-weight:400">(applied on next Start)</span></h3>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
-            <div>
-              <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">World Seed (blank = random)</div>
+          <h3 style="font-size:.88rem;color:var(--accent);margin-bottom:12px">⚙ Server Configuration <span style="font-size:.7rem;color:var(--dim);font-weight:400">(applied on next Start)</span></h3>
+          <div class="config-grid">
+            <div class="config-field">
+              <label>World Seed <span style="color:var(--dim)">(blank = random)</span></label>
               <input type="number" id="input-seed" placeholder="e.g. 8675309">
             </div>
-            <div>
-              <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">Max Players</div>
+            <div class="config-field">
+              <label>Max Players</label>
               <input type="number" id="input-maxplayers" value="20" min="1" max="100">
             </div>
-            <div>
-              <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">Default Gamemode</div>
-              <input type="number" id="input-gamemode" value="0" min="0" max="3" placeholder="0=Survival 1=Creative">
+            <div class="config-field">
+              <label>Default Gamemode <span style="color:var(--dim)">0=Survival 1=Creative</span></label>
+              <input type="number" id="input-gamemode" value="0" min="0" max="3">
             </div>
-            <div>
-              <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">Difficulty</div>
-              <input type="number" id="input-difficulty" value="1" min="0" max="3" placeholder="0=Peaceful…3=Hard">
+            <div class="config-field">
+              <label>Difficulty <span style="color:var(--dim)">0=Peaceful … 3=Hard</span></label>
+              <input type="number" id="input-difficulty" value="1" min="0" max="3">
             </div>
-            <div style="grid-column:1/-1">
-              <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">MOTD</div>
-              <input type="text" id="input-motd" placeholder="§aEaglerNet §7| 1.12.2 Browser Server">
+            <div class="config-field" style="grid-column:1/-1">
+              <label>MOTD</label>
+              <input type="text" id="input-motd" placeholder="§aEaglerNet §7| Browser MC Server">
             </div>
           </div>
         </div>
 
-        <!-- Version support -->
         <div class="card">
-          <h3>Supported Versions <span style="font-size:.72rem;color:var(--dim);font-weight:400">(edit config.js → versions.enabled)</span></h3>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px" id="version-badges">
+          <h3 style="font-size:.88rem;color:var(--accent);margin-bottom:8px">📦 Supported Versions</h3>
+          <p style="font-size:.75rem;color:var(--dim);margin-bottom:10px">Edit <code style="font-family:var(--mono);color:var(--accent)">config.js → versions.enabled</code> to toggle versions.</p>
+          <div class="ver-badges">
             <span class="ver-badge on">1.5.2 <span class="ver-proto">p61</span></span>
             <span class="ver-badge on">1.6.4 <span class="ver-proto">p78</span></span>
             <span class="ver-badge on">1.7.10 <span class="ver-proto">p5</span></span>
@@ -233,67 +360,68 @@
             <span class="ver-badge on">1.10 <span class="ver-proto">p210</span></span>
             <span class="ver-badge on">1.11.2 <span class="ver-proto">p316</span></span>
             <span class="ver-badge on">1.12 <span class="ver-proto">p335</span></span>
-            <span class="ver-badge on native">1.12.2 <span class="ver-proto">p340 ★</span></span>
+            <span class="ver-badge native">1.12.2 <span class="ver-proto">p340 ★</span></span>
           </div>
-          <div style="font-size:.7rem;color:var(--dim);margin-top:10px">★ Native format. Older versions use a protocol compatibility layer.</div>
+          <p style="font-size:.68rem;color:var(--dim);margin-top:8px">★ Native format. Older versions use a protocol compatibility layer.</p>
         </div>
 
-        <!-- Plugin Loader config -->
         <div class="card">
-          <h3>BOTTLE Plugin Loader</h3>
-          <div style="font-size:.8rem;color:var(--dim);line-height:1.7;margin-bottom:10px">
-            EaglerNet uses <strong style="color:var(--accent)">BOTTLE</strong> as its plugin loader.
-            Plugins register with <code style="color:var(--accent)">BOTTLE.register(manifest, hooks)</code>.
-          </div>
-          <div style="font-size:.72rem;color:var(--dim);margin-bottom:6px">Built-in plugins (toggle in <code style="color:var(--accent)">config.js</code>):</div>
-          <table style="width:100%;border-collapse:collapse;font-size:.78rem">
-            <thead><tr style="color:var(--dim);font-size:.68rem">
-              <th style="text-align:left;padding:4px 0">Plugin</th>
-              <th style="text-align:left;padding:4px 0">Default</th>
-              <th style="text-align:left;padding:4px 0">Description</th>
+          <h3 style="font-size:.88rem;color:var(--accent);margin-bottom:10px">◆ BOTTLE Plugin Loader</h3>
+          <p style="font-size:.78rem;color:var(--text2);margin-bottom:10px">
+            EaglerNet uses <strong style="color:var(--accent)">BOTTLE</strong> as its plugin loader. Plugins call
+            <code style="font-family:var(--mono);color:var(--accent);background:rgba(0,212,170,.1);padding:1px 6px;border-radius:4px">BOTTLE.register(manifest, hooks)</code>
+            to register with the server.
+          </p>
+          <table>
+            <thead><tr>
+              <th>Plugin</th><th>Default</th><th>Description</th>
             </tr></thead>
             <tbody>
-              <tr><td style="color:var(--accent);padding:4px 0">EaglercraftXServer</td><td><span class="pill on">on</span></td><td style="color:var(--dim)">WebRTC, skins, voice chat support</td></tr>
-              <tr><td style="color:var(--accent);padding:4px 0">ChatFilter</td><td><span class="pill off">off</span></td><td style="color:var(--dim)">Spam and profanity filter</td></tr>
-              <tr><td style="color:var(--accent);padding:4px 0">AntiCheat</td><td><span class="pill off">off</span></td><td style="color:var(--dim)">Basic movement speed checks</td></tr>
+              <tr><td style="color:var(--accent)">EaglercraftXServer</td><td><span class="pill on">on</span></td><td style="color:var(--dim)">WebRTC, skins, voice chat</td></tr>
+              <tr><td style="color:var(--accent)">WorldEdit</td><td><span class="pill on">on</span></td><td style="color:var(--dim)">//pos1/2, //set, //copy, //paste, 70+ block types</td></tr>
+              <tr><td style="color:var(--accent)">WorldGuard</td><td><span class="pill on">on</span></td><td style="color:var(--dim)">/rg define/claim/flag, region protection</td></tr>
+              <tr><td style="color:var(--accent)">Multiverse</td><td><span class="pill on">on</span></td><td style="color:var(--dim)">/mv create/tp, multi-world management</td></tr>
+              <tr><td style="color:var(--accent)">ChatFilter</td><td><span class="pill off">off</span></td><td style="color:var(--dim)">Spam and profanity filter</td></tr>
+              <tr><td style="color:var(--accent)">AntiCheat</td><td><span class="pill off">off</span></td><td style="color:var(--dim)">Basic movement speed checks</td></tr>
             </tbody>
           </table>
         </div>
 
-        <!-- Folder structure -->
         <div class="card">
-          <h3>File Structure</h3>
-          <pre style="font-family:var(--mono);font-size:.72rem;color:var(--accent);line-height:1.9">eaglernet/
-├── config.js                    ← §7Server config (versions, plugins, world)
-├── index.html                   ← §7Open this to launch the dashboard
-├── manifest.json + sw.js        ← §7PWA + offline support
-├── css/main.css
-├── js/
-│   ├── dashboard.js             ← §7Admin UI
-│   ├── plugin-api.js            ← §7BOTTLE API (browser context)
-│   └── mc/
-│       ├── buffer.js            ← §7VarInt, VarLong, UUID, Position
-│       ├── nbt.js               ← §7NBT all 13 tag types
-│       ├── noise.js             ← §7Simplex noise (terrain gen)
-│       ├── blocks.js            ← §7Block state IDs 1.12.2
-│       ├── world.js             ← §7World gen (terrain, caves, ores)
-│       ├── chunk.js             ← §7Chunk palette encoder
-│       ├── protocol.js          ← §71.5.2→1.12.2 state machine
-│       └── server.js            ← §7Game server Web Worker
-└── plugins/
-    ├── eaglercraftxserver/      ← §7[builtin] EaglercraftX support
-    ├── chatfilter/              ← §7[builtin] spam/profanity filter
-    ├── anticheat/               ← §7[builtin] movement checks
-    └── example-plugin/         ← §7Template for your own plugins</pre>
+          <h3 style="font-size:.88rem;color:var(--accent);margin-bottom:10px">📋 Quick Plugin Reference</h3>
+          <pre style="font-family:var(--mono);font-size:.72rem;color:var(--text2);line-height:1.9;overflow-x:auto">BOTTLE.register({
+  id: 'my-plugin', name: 'My Plugin',
+  version: '1.0.0', author: 'You',
+}, {
+  'player.join'({ player }) {
+    player.sendMessage('§aWelcome, ' + player.username + '!');
+  },
+  'player.chat'({ player, message }) { /* return false to cancel */ },
+  'server.tick'({ tick })            { /* runs every 50ms */ },
+  command(player, cmd, args) {
+    if (cmd !== 'hello') return false;
+    player.sendMessage('§aHello!'); return true;
+  },
+});</pre>
         </div>
 
       </div>
     </div>
 
   </main>
+
+  <!-- ── Mobile bottom nav ─────────────────────────── -->
+  <nav id="bottomnav">
+    <button class="bnav-btn active" data-tab="console"><span class="bnav-icon">»</span>Console</button>
+    <button class="bnav-btn" data-tab="players"><span class="bnav-icon">👤</span>Players</button>
+    <button class="bnav-btn" data-tab="plugins"><span class="bnav-icon">◆</span>Plugins</button>
+    <button class="bnav-btn" data-tab="connect"><span class="bnav-icon">🔗</span>Connect</button>
+    <button class="bnav-btn" data-tab="world"><span class="bnav-icon">🌍</span>Config</button>
+  </nav>
+
 </div>
 
-<script src="js/plugin-api.js"></script>
-<script src="js/dashboard.js"></script>
+<script src="js/plugin-api.js?v=6"></script>
+<script src="js/dashboard.js?v=6"></script>
 </body>
 </html>

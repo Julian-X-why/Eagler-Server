@@ -1,4 +1,4 @@
-const CACHE = 'eaglernet-v3';
+const CACHE = 'eaglernet-v5';
 const ASSETS = [
   './', './index.html', './config.js', './manifest.json',
   './css/main.css',
