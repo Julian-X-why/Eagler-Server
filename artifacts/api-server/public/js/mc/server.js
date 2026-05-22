@@ -38,12 +38,11 @@ importScripts(
 // so players can connect by IP without WebRTC.
 class ProxyChannel {
   constructor(playerId) {
-    this.playerId    = playerId;
-    this.readyState  = 'open';
-    this._handlers   = { message: [], close: [], error: [] };
+    this.playerId   = playerId;
+    this.readyState = 'open';
+    this._handlers  = { message: [], close: [], error: [] };
   }
   send(buffer) {
-    // buffer may be an ArrayBuffer or Uint8Array — normalise
     const ab = buffer instanceof ArrayBuffer ? buffer
              : (buffer instanceof Uint8Array ? buffer.buffer : new Uint8Array(buffer).buffer);
     self.postMessage({ type: 'ws-send', id: this.playerId, data: ab }, [ab]);
@@ -55,7 +54,6 @@ class ProxyChannel {
   }
   addEventListener(evt, fn)    { (this._handlers[evt] = this._handlers[evt]||[]).push(fn); }
   removeEventListener(evt, fn) { this._handlers[evt] = (this._handlers[evt]||[]).filter(f=>f!==fn); }
-  // Called by the worker event handler to push incoming data
   _receive(data) {
     const e = { data };
     for (const fn of this._handlers.message||[]) fn(e);
@@ -90,7 +88,10 @@ class BOTTLEServer {
     for (const { id, fn } of (this._events.get(event)||[])) {
       const p = this._plugins.get(id);
       if (!p?.enabled) continue;
-      try { const r = fn.call(p.hooks, data); if (r === false) return false; } catch(e) {
+      try {
+        const r = fn.call(p.hooks, data);
+        if (r === false) return false;
+      } catch(e) {
         self.postMessage({ type:'log', level:'error', msg:`[BOTTLE:${id}] ${event}: ${e.message}` });
       }
     }
@@ -158,8 +159,18 @@ class EaglerNetServer {
     this._tpsHistory.push(Date.now());
     while (this._tpsHistory.length > 20) this._tpsHistory.shift();
     this.BOTTLE.emit('server.tick', { tick: this._tickCount });
-    if (this._tickCount % 200 === 0) self.postMessage({ type:'stats', data: this.getStats() });
-    if (this._tickCount % 400 === 0) for (const p of this.players.values()) p._sendTimeUpdate();
+    if (this._tickCount % 200 === 0) {
+      self.postMessage({ type:'stats', data: this.getStats() });
+    }
+    if (this._tickCount % 400 === 0) {
+      for (const p of this.players.values()) p._sendTimeUpdate();
+    }
+    // Every 2 ticks (~10Hz), broadcast entity positions to keep movement smooth
+    if (this._tickCount % 2 === 0) {
+      for (const mover of this.players.values()) {
+        this._broadcastPlayerPosition(mover);
+      }
+    }
   }
 
   // ── WS relay — called from worker message handler ─────────
@@ -167,7 +178,6 @@ class EaglerNetServer {
     const chan = new ProxyChannel(wsId);
     this._proxyChans.set(wsId, chan);
     const session = new PlayerSession(chan, this, ++this._entityId);
-    // Store wsId on session for clean-up
     session._wsId = wsId;
     self.postMessage({ type:'log', level:'info', msg:`WS player connecting from ${ip} [${wsId}]` });
   }
@@ -197,7 +207,9 @@ class EaglerNetServer {
     await pc.setLocalDescription(offer);
     return new Promise(resolve => {
       const done = () => resolve({ id: peerId, offer: pc.localDescription?.sdp || '' });
-      pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState==='complete') done(); });
+      pc.addEventListener('icegatheringstatechange', () => {
+        if (pc.iceGatheringState === 'complete') done();
+      });
       setTimeout(done, 6000);
     });
   }
@@ -211,17 +223,32 @@ class EaglerNetServer {
   // ── Player lifecycle ──────────────────────────────────────
   onPlayerJoin(session) {
     this.players.set(session.uuid, session);
+
+    // Op / whitelist check
     if ((this.config.admin?.ops||[]).includes(session.username)) session.isOp = true;
     if (this.config.admin?.whitelist) {
       if (!(this.config.admin.whitelistedPlayers||[]).includes(session.username)) {
-        session.disconnect('You are not whitelisted on this server.'); return;
+        session.disconnect('You are not whitelisted on this server.');
+        return;
       }
     }
-    this.broadcast({ text: session.username + ' joined the game', color:'yellow' });
+
+    // Announce join
+    this.broadcast({ text: session.username + ' joined the game', color: 'yellow' });
+
+    // Player list + entity spawn for all existing players ↔ new player
     for (const other of this.players.values()) {
+      // Player list entries
       other.sendPlayerListAdd(session);
       if (other !== session) session.sendPlayerListAdd(other);
+
+      // Spawn entity: show session to other and other to session
+      if (other !== session) {
+        session.spawnTo(other);   // new player's entity appears on other's screen
+        other.spawnTo(session);   // existing player's entity appears on new player's screen
+      }
     }
+
     this.BOTTLE.emit('player.join', { player: session });
     self.postMessage({ type:'player.join', username:session.username, uuid:session.uuid,
       count:this.players.size, proto:session.proto, version:PROTO_NAMES[session.proto]||session.proto });
@@ -232,15 +259,21 @@ class EaglerNetServer {
   onPlayerLeave(session) {
     if (!this.players.has(session.uuid)) return;
     this.players.delete(session.uuid);
-    // Also clean up proxy channel if this was a WS player
     if (session._wsId) this._proxyChans.delete(session._wsId);
-    this.broadcast({ text: session.username + ' left the game', color:'yellow' });
-    for (const other of this.players.values()) other.sendPlayerListRemove(session.uuid);
+
+    // Despawn entity and remove from player list for all remaining players
+    for (const other of this.players.values()) {
+      session.despawnFrom(other);
+      other.sendPlayerListRemove(session.uuid);
+    }
+
+    this.broadcast({ text: session.username + ' left the game', color: 'yellow' });
     this.BOTTLE.emit('player.quit', { player: session });
     self.postMessage({ type:'player.quit', username:session.username, uuid:session.uuid, count:this.players.size });
     self.postMessage({ type:'log', level:'info', msg:`${session.username} left (${this.players.size}/${this.config.maxPlayers})` });
   }
 
+  // ── Chat ──────────────────────────────────────────────────
   onChat(session, message) {
     const ok = this.BOTTLE.emit('player.chat', { player: session, message });
     if (ok === false) return;
@@ -251,81 +284,73 @@ class EaglerNetServer {
     self.postMessage({ type:'chat', username:session.username, message, time:Date.now() });
   }
 
-  onMove(session, x, y, z) { this.BOTTLE.emit('player.move', { player: session, x, y, z }); }
+  onMove(session, x, y, z) {
+    this.BOTTLE.emit('player.move', { player: session, x, y, z });
+  }
 
   broadcast(component) {
     for (const p of this.players.values()) p.sendChatMessage(component, 0);
     self.postMessage({ type:'broadcast', message: JSON.stringify(component) });
   }
 
-  handleCommand(session, cmd) {
-    const parts = cmd.replace(/^\//,'').split(/\s+/);
-    const name = parts[0].toLowerCase(), args = parts.slice(1);
-    const send  = (msg) => session.sendChatMessage({ text: msg }, 1);
-    switch(name) {
-      case 'help':   send('§aCommands: §7/help /tps /players /seed /version /gamemode /tp /kick /say /op /plugins /bottle'); return;
-      case 'tps':    send(`§aTPS: §f${this.getTPS().toFixed(2)} §7| Uptime: §f${this._fmtUptime(Date.now()-this._startTime)}`); return;
-      case 'players': {
-        const list=[...this.players.values()].map(p=>`${p.username}§7[${PROTO_NAMES[p.proto]||p.proto}]`).join(', ');
-        send(`§aOnline §7(${this.players.size}/${this.config.maxPlayers}): §f${list||'none'}`); return;
+  // ── Entity movement broadcasting ──────────────────────────
+  // Called by _tick every 2 ticks; also called after a move packet.
+  _broadcastPlayerPosition(mover) {
+    const dx = mover.x - mover._lastSentX;
+    const dy = mover.y - mover._lastSentY;
+    const dz = mover.z - mover._lastSentZ;
+    const dyaw   = Math.abs(mover.yaw   - mover._lastSentYaw);
+    const dpitch = Math.abs(mover.pitch - mover._lastSentPitch);
+
+    // Skip if barely moved and barely rotated
+    if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001 && Math.abs(dz) < 0.001
+        && dyaw < 0.5 && dpitch < 0.5) return;
+
+    const radius = (this.config.performance?.chunkRadius ?? 6) + 2;
+    const mcx = Math.floor(mover.x / 16), mcz = Math.floor(mover.z / 16);
+
+    for (const player of this.players.values()) {
+      if (player === mover) continue;
+      const pcx = Math.floor(player.x / 16), pcz = Math.floor(player.z / 16);
+      const dist = Math.max(Math.abs(mcx - pcx), Math.abs(mcz - pcz));
+      if (dist <= radius) {
+        mover.sendEntityMoveTo(player);
+        mover.sendEntityHeadLookTo(player);
       }
-      case 'seed':    send(`§aSeed: §f${this.world.seed}`); return;
-      case 'version': send(`§aEaglerNet §f1.12.2 §7| BOTTLE §f${self.BOTTLE?.version||'1.0.0'} §7| Proto §f${session.proto} §7(${PROTO_NAMES[session.proto]||'?'})`); return;
-      case 'gamemode': {
-        if (!session.isOp) { send('§cNo permission.'); return; }
-        const gm=parseInt(args[0]); if(isNaN(gm)||gm<0||gm>3){send('§cUsage: /gamemode <0-3>');return;}
-        session.gamemode=gm; session._sendPlayerAbilities();
-        send(`§aGamemode: §f${['Survival','Creative','Adventure','Spectator'][gm]}`); return;
-      }
-      case 'tp':
-        if (args.length>=3) { session.teleport(parseFloat(args[0]),parseFloat(args[1]),parseFloat(args[2])); send('§aTeleported!'); }
-        else send('§cUsage: /tp <x> <y> <z>'); return;
-      case 'kick': {
-        if (!session.isOp) { send('§cNo permission.'); return; }
-        const t=[...this.players.values()].find(p=>p.username.toLowerCase()===args[0]?.toLowerCase());
-        t ? (t.kick(args.slice(1).join(' ')||'Kicked'), send(`§aKicked ${t.username}`)) : send('§cPlayer not found'); return;
-      }
-      case 'say':    this.broadcast({text:'[Server] '+args.join(' '),color:'gray'}); return;
-      case 'op': {
-        if (!session.isOp) { send('§cNo permission.'); return; }
-        const t=[...this.players.values()].find(p=>p.username.toLowerCase()===args[0]?.toLowerCase());
-        if (t) { t.isOp=true; t.sendChatMessage({text:'§aYou are now an operator'},1); send(`§aOpped ${t.username}`); } return;
-      }
-      case 'plugins': case 'bottle':
-        send('§6BOTTLE Plugins:\n'+this.BOTTLE.getList().map(p=>`${p.enabled?'§a':'§c'}${p.name}§7 v${p.version}${p.builtin?' §8[builtin]':''}`).join('\n')); return;
-      default:
-        if (!this.BOTTLE.handleCommand(session, name, args)) send(`§cUnknown command: /${name}. Try /help`);
     }
+
+    // Update "last sent" position/look
+    mover._lastSentX     = mover.x;
+    mover._lastSentY     = mover.y;
+    mover._lastSentZ     = mover.z;
+    mover._lastSentYaw   = mover.yaw;
+    mover._lastSentPitch = mover.pitch;
   }
 
-  adminCommand(cmd) {
-    const parts=cmd.replace(/^\//,'').split(/\s+/), name=parts[0].toLowerCase(), args=parts.slice(1);
-    const log=(m)=>self.postMessage({type:'log',level:'info',msg:m});
-    switch(name) {
-      case 'say':   this.broadcast({text:'[Server] '+args.join(' '),color:'gray'}); log(`[Console] say ${args.join(' ')}`); break;
-      case 'kick': {
-        const t=[...this.players.values()].find(p=>p.username.toLowerCase()===args[0]?.toLowerCase());
-        if(t) t.kick(args.slice(1).join(' ')||'Kicked by server');
-        log(t?`Kicked ${t.username}`:'Player not found'); break;
+  // Legacy method kept for _movePlayer calls (now delegates to tick-based broadcast)
+  broadcastEntityMove(mover, rotated) {
+    // Immediate broadcast on movement for low-latency feel
+    this._broadcastPlayerPosition(mover);
+  }
+
+  // ── Animation broadcast (arm swing) ──────────────────────
+  broadcastAnimation(source, animId) {
+    const radius = (this.config.performance?.chunkRadius ?? 6) + 2;
+    const scx = Math.floor(source.x / 16), scz = Math.floor(source.z / 16);
+    for (const player of this.players.values()) {
+      if (player === source) continue;
+      const dist = Math.max(
+        Math.abs(Math.floor(player.x / 16) - scx),
+        Math.abs(Math.floor(player.z / 16) - scz)
+      );
+      if (dist <= radius) {
+        try {
+          const pkt = new MCBuffer();
+          pkt.writeVarInt(source.entityId);
+          pkt.writeUByte(animId); // 0 = swing main arm
+          player._sendRaw(MCBuffer.buildPacket(player.pktIds.ANIMATION_OUT, pkt));
+        } catch {}
       }
-      case 'op': {
-        const t=[...this.players.values()].find(p=>p.username.toLowerCase()===args[0]?.toLowerCase());
-        if(t){t.isOp=true;t.sendChatMessage({text:'§aYou are now an operator'},1);log(`Opped ${t.username}`);} break;
-      }
-      case 'deop': {
-        const t=[...this.players.values()].find(p=>p.username.toLowerCase()===args[0]?.toLowerCase());
-        if(t){t.isOp=false;log(`De-opped ${t.username}`);}break;
-      }
-      case 'tps':    log(`TPS: ${this.getTPS().toFixed(2)} | Uptime: ${this._fmtUptime(Date.now()-this._startTime)}`); break;
-      case 'list':   log(`Players (${this.players.size}/${this.config.maxPlayers}): ${[...this.players.values()].map(p=>p.username).join(', ')||'none'}`); break;
-      case 'seed':   log(`World seed: ${this.world.seed}`); break;
-      case 'plugins': case 'bottle':
-        log('BOTTLE Plugins: '+this.BOTTLE.getList().map(p=>`${p.name} v${p.version}${p.enabled?'':' [disabled]'}`).join(', ')); break;
-      case 'stats':  self.postMessage({type:'stats',data:this.getStats()}); break;
-      case 'stop':
-        for(const p of this.players.values()) p.disconnect('Server shutting down');
-        self.postMessage({type:'stopped'}); break;
-      default: self.postMessage({type:'log',level:'warn',msg:`Unknown command: ${cmd}`});
     }
   }
 
@@ -333,34 +358,37 @@ class EaglerNetServer {
   // updates: [{x, y, z, stateId}]
   broadcastBlockUpdates(updates) {
     if (!updates?.length) return;
-    // Group by chunk so we can decide resend vs individual packets
+
+    // Group by chunk
     const byChunk = new Map();
     for (const u of updates) {
       const key = `${Math.floor(u.x/16)},${Math.floor(u.z/16)}`;
       if (!byChunk.has(key)) byChunk.set(key, []);
       byChunk.get(key).push(u);
     }
+
+    const radius = (this.config.performance?.chunkRadius ?? 6) + 2;
+
     for (const [key, chunkUpdates] of byChunk) {
       const [cx, cz] = key.split(',').map(Number);
-      const chunk = this.world.getOrGenerateChunk(cx, cz);
+
       if (chunkUpdates.length > 256) {
-        // Re-send whole chunk for large operations
-        const pkt = buildChunkPacket(chunk);
+        // Re-send entire chunk for large operations (e.g. WorldEdit)
+        const chunk = this.world.getOrGenerateChunk(cx, cz);
+        const pkt   = buildChunkPacket(chunk);
         for (const player of this.players.values()) {
           const pcx = Math.floor(player.x/16), pcz = Math.floor(player.z/16);
-          const dist = Math.max(Math.abs(pcx-cx), Math.abs(pcz-cz));
-          if (dist <= (this.config.performance?.chunkRadius ?? 5) + 2) {
+          if (Math.max(Math.abs(pcx-cx), Math.abs(pcz-cz)) <= radius) {
             player._sendRaw(pkt);
           }
         }
       } else {
-        // Send individual block change packets (0x0B / 0x23 depending on version)
+        // Individual Block Change packets
         for (const u of chunkUpdates) {
-          const pos = this._encodePosition(u.x, u.y, u.z);
+          const ux = Math.floor(u.x/16), uz = Math.floor(u.z/16);
           for (const player of this.players.values()) {
             const pcx = Math.floor(player.x/16), pcz = Math.floor(player.z/16);
-            const dist = Math.max(Math.abs(Math.floor(u.x/16)-pcx), Math.abs(Math.floor(u.z/16)-pcz));
-            if (dist <= (this.config.performance?.chunkRadius ?? 5) + 2) {
+            if (Math.max(Math.abs(ux-pcx), Math.abs(uz-pcz)) <= radius) {
               player._sendBlockChange(u.x, u.y, u.z, u.stateId);
             }
           }
@@ -369,11 +397,93 @@ class EaglerNetServer {
     }
   }
 
-  _encodePosition(x, y, z) {
-    const bx = BigInt(x & 0x3FFFFFF), by = BigInt(y & 0xFFF), bz = BigInt(z & 0x3FFFFFF);
-    return (bx << 38n) | (by << 26n) | bz;
+  // ── In-game commands ──────────────────────────────────────
+  handleCommand(session, cmd) {
+    const parts = cmd.replace(/^\//,'').split(/\s+/);
+    const name  = parts[0].toLowerCase(), args = parts.slice(1);
+    const send  = (msg) => session.sendChatMessage({ text: msg }, 1);
+    switch(name) {
+      case 'help':
+        send('§aCommands: §7/help /tps /players /seed /version /gamemode /tp /kick /say /op /plugins /bottle');
+        return;
+      case 'tps':
+        send(`§aTPS: §f${this.getTPS().toFixed(2)} §7| Uptime: §f${this._fmtUptime(Date.now()-this._startTime)}`);
+        return;
+      case 'players': {
+        const list = [...this.players.values()].map(p=>`${p.username}§7[${PROTO_NAMES[p.proto]||p.proto}]`).join(', ');
+        send(`§aOnline §7(${this.players.size}/${this.config.maxPlayers}): §f${list||'none'}`);
+        return;
+      }
+      case 'seed':    send(`§aSeed: §f${this.world.seed}`); return;
+      case 'version': send(`§aEaglerNet §f1.12.2 §7| BOTTLE §f${self.BOTTLE?.version||'1.0.0'} §7| Proto §f${session.proto} §7(${PROTO_NAMES[session.proto]||'?'})`); return;
+      case 'gamemode': {
+        if (!session.isOp) { send('§cNo permission.'); return; }
+        const gm = parseInt(args[0]);
+        if (isNaN(gm)||gm<0||gm>3) { send('§cUsage: /gamemode <0-3>'); return; }
+        session.gamemode = gm;
+        session._sendPlayerAbilities();
+        send(`§aGamemode: §f${['Survival','Creative','Adventure','Spectator'][gm]}`);
+        return;
+      }
+      case 'tp':
+        if (args.length >= 3) {
+          session.teleport(parseFloat(args[0]), parseFloat(args[1]), parseFloat(args[2]));
+          send('§aTeleported!');
+        } else send('§cUsage: /tp <x> <y> <z>');
+        return;
+      case 'kick': {
+        if (!session.isOp) { send('§cNo permission.'); return; }
+        const t = [...this.players.values()].find(p=>p.username.toLowerCase()===args[0]?.toLowerCase());
+        t ? (t.kick(args.slice(1).join(' ')||'Kicked'), send(`§aKicked ${t.username}`)) : send('§cPlayer not found');
+        return;
+      }
+      case 'say':  this.broadcast({ text:'[Server] '+args.join(' '), color:'gray' }); return;
+      case 'op': {
+        if (!session.isOp) { send('§cNo permission.'); return; }
+        const t = [...this.players.values()].find(p=>p.username.toLowerCase()===args[0]?.toLowerCase());
+        if (t) { t.isOp=true; t.sendChatMessage({text:'§aYou are now an operator'},1); send(`§aOpped ${t.username}`); }
+        return;
+      }
+      case 'plugins': case 'bottle':
+        send('§6BOTTLE Plugins:\n'+this.BOTTLE.getList().map(p=>`${p.enabled?'§a':'§c'}${p.name}§7 v${p.version}${p.builtin?' §8[builtin]':''}`).join('\n'));
+        return;
+      default:
+        if (!this.BOTTLE.handleCommand(session, name, args)) send(`§cUnknown command: /${name}. Try /help`);
+    }
   }
 
+  adminCommand(cmd) {
+    const parts = cmd.replace(/^\//,'').split(/\s+/), name = parts[0].toLowerCase(), args = parts.slice(1);
+    const log = (m) => self.postMessage({ type:'log', level:'info', msg:m });
+    switch(name) {
+      case 'say':   this.broadcast({ text:'[Server] '+args.join(' '), color:'gray' }); log(`[Console] say ${args.join(' ')}`); break;
+      case 'kick': {
+        const t = [...this.players.values()].find(p=>p.username.toLowerCase()===args[0]?.toLowerCase());
+        if(t) t.kick(args.slice(1).join(' ')||'Kicked by server');
+        log(t?`Kicked ${t.username}`:'Player not found'); break;
+      }
+      case 'op': {
+        const t = [...this.players.values()].find(p=>p.username.toLowerCase()===args[0]?.toLowerCase());
+        if(t){t.isOp=true;t.sendChatMessage({text:'§aYou are now an operator'},1);log(`Opped ${t.username}`);}break;
+      }
+      case 'deop': {
+        const t = [...this.players.values()].find(p=>p.username.toLowerCase()===args[0]?.toLowerCase());
+        if(t){t.isOp=false;log(`De-opped ${t.username}`);}break;
+      }
+      case 'tps':    log(`TPS: ${this.getTPS().toFixed(2)} | Uptime: ${this._fmtUptime(Date.now()-this._startTime)}`); break;
+      case 'list':   log(`Players (${this.players.size}/${this.config.maxPlayers}): ${[...this.players.values()].map(p=>p.username).join(', ')||'none'}`); break;
+      case 'seed':   log(`World seed: ${this.world.seed}`); break;
+      case 'plugins': case 'bottle':
+        log('BOTTLE Plugins: '+this.BOTTLE.getList().map(p=>`${p.name} v${p.version}${p.enabled?'':' [disabled]'}`).join(', ')); break;
+      case 'stats':  self.postMessage({ type:'stats', data: this.getStats() }); break;
+      case 'stop':
+        for(const p of this.players.values()) p.disconnect('Server shutting down');
+        self.postMessage({ type:'stopped' }); break;
+      default: self.postMessage({ type:'log', level:'warn', msg:`Unknown command: ${cmd}` });
+    }
+  }
+
+  // ── Built-in plugins ──────────────────────────────────────
   _loadBuiltinPlugins() {
     const builtins = this.config.bottle?.builtins || {};
     const files = {
@@ -385,43 +495,51 @@ class EaglerNetServer {
       multiverse:         '../../plugins/multiverse/plugin.js',
     };
 
-    // ── Extended BOTTLE world API exposed to all plugins ────
     const srv = this;
     self.BOTTLE = {
       register:   (m,h) => this.BOTTLE.register(m,h),
       version:    '1.0.0',
       apiVersion: 2,
 
-      // World block access
       world: {
         get seed()  { return srv.world.seed; },
-        getBlock:   (x,y,z)            => srv.world.getBlock(x,y,z),
-        setBlock:   (x,y,z,sid)        => { srv.world.setBlock(x,y,z,sid); srv.broadcastBlockUpdates([{x,y,z,stateId:sid}]); },
-        fillRegion: (x1,y1,z1,x2,y2,z2,sid,mask) => srv.world.fillRegion(x1,y1,z1,x2,y2,z2,sid,mask),
-        getSpawn:   ()                 => ({ x:srv.world.spawnX, y:srv.world.spawnY, z:srv.world.spawnZ }),
-        setSpawn:   (x,y,z)            => { srv.world.spawnX=x; srv.world.spawnY=y; srv.world.spawnZ=z; },
+        getBlock:   (x,y,z)          => srv.world.getBlock(x,y,z),
+        setBlock:   (x,y,z,sid)      => { srv.world.setBlock(x,y,z,sid); srv.broadcastBlockUpdates([{x,y,z,stateId:sid}]); },
+        fillRegion: (x1,y1,z1,x2,y2,z2,sid,mask) => {
+          const undo = srv.world.fillRegion(x1,y1,z1,x2,y2,z2,sid,mask);
+          // Build update list and broadcast
+          const updates = [];
+          for (let y=Math.min(y1,y2);y<=Math.max(y1,y2);y++)
+            for (let z=Math.min(z1,z2);z<=Math.max(z1,z2);z++)
+              for (let x=Math.min(x1,x2);x<=Math.max(x1,x2);x++)
+                updates.push({x,y,z,stateId:sid});
+          srv.broadcastBlockUpdates(updates);
+          return undo;
+        },
+        getSpawn:   ()             => ({ x:srv.world.spawnX, y:srv.world.spawnY, z:srv.world.spawnZ }),
+        setSpawn:   (x,y,z)       => { srv.world.spawnX=x; srv.world.spawnY=y; srv.world.spawnZ=z; },
         get time()  { return srv.world.time; },
         set time(t) { srv.world.time = BigInt(t); },
       },
 
-      // Player access
       getPlayers: () => [...srv.players.values()],
       getPlayer:  (name) => [...srv.players.values()].find(p=>p.username.toLowerCase()===name.toLowerCase()),
       broadcast:  (msg)  => srv.broadcast(typeof msg==='string'?{text:msg}:msg),
     };
-    self.EaglerForge = self.BOTTLE;
+    self.EaglerForge = self.BOTTLE; // alias for plugin compatibility
 
     for (const [id, enabled] of Object.entries(builtins)) {
       if (!enabled || !files[id]) continue;
       try { importScripts(files[id]); }
-      catch(e) { self.postMessage({type:'log',level:'warn',msg:`[BOTTLE] Failed builtin '${id}': ${e.message}`}); }
+      catch(e) { self.postMessage({ type:'log', level:'warn', msg:`[BOTTLE] Failed builtin '${id}': ${e.message}` }); }
     }
   }
 
+  // ── Helpers ───────────────────────────────────────────────
   getTPS() {
-    if (this._tpsHistory.length<2) return 20;
-    const e=this._tpsHistory[this._tpsHistory.length-1]-this._tpsHistory[0];
-    return Math.min(20,Math.round((this._tpsHistory.length-1)/(e/1000)*100)/100);
+    if (this._tpsHistory.length < 2) return 20;
+    const e = this._tpsHistory[this._tpsHistory.length-1] - this._tpsHistory[0];
+    return Math.min(20, Math.round((this._tpsHistory.length-1)/(e/1000)*100)/100);
   }
 
   getStats() {
@@ -429,8 +547,9 @@ class EaglerNetServer {
       players:this.players.size, max:this.config.maxPlayers, seed:this.world.seed,
       motd:this.config.motd, versions:'1.5.2 → 1.12.2', plugins:this.BOTTLE.getList().length };
   }
+
   _fmtUptime(ms) {
-    const s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60);
+    const s=Math.floor(ms/1000), m=Math.floor(s/60), h=Math.floor(m/60);
     return h>0?`${h}h ${m%60}m`:m>0?`${m}m ${s%60}s`:`${s}s`;
   }
 }
@@ -462,23 +581,21 @@ self.addEventListener('message', async (e) => {
       break;
     case 'load-plugin-code': {
       if (!server) break;
-      try { const fn=new Function('BOTTLE','EaglerForge',data.code); fn(self.BOTTLE,self.BOTTLE); }
-      catch(e) { self.postMessage({type:'log',level:'error',msg:`[BOTTLE] Plugin error: ${e.message}`}); }
+      try {
+        const fn = new Function('BOTTLE','EaglerForge', data.code);
+        fn(self.BOTTLE, self.BOTTLE);
+      } catch(e) {
+        self.postMessage({ type:'log', level:'error', msg:`[BOTTLE] Plugin error: ${e.message}` });
+      }
       break;
     }
     case 'load-plugin':
       if (server) server.BOTTLE.loadSerialized(data.id, data.manifest, data.hooksStr);
       break;
-
-    // ── Block updates from plugins ───────────────────────────
     case 'block-updates':
       server?.broadcastBlockUpdates(data);
       break;
-
-    // ── Multiverse messages ──────────────────────────────────
-    case 'mv-world-change':
-      // Player switched world — no-op for now (single-world server)
-      break;
+    case 'mv-world-change': break;
     case 'mv-create-world':
       self.postMessage({ type:'log', level:'info', msg:`[MV] Creating world '${data.name}' [${data.worldType}] seed:${data.seed}` });
       break;
@@ -488,8 +605,6 @@ self.addEventListener('message', async (e) => {
     case 'mv-delete-world':
       self.postMessage({ type:'log', level:'info', msg:`[MV] Deleted world '${data.name}'` });
       break;
-
-    // ── WS relay messages ────────────────────────────────────
     case 'ws-player-connect':
       server?.onWsPlayerConnect(data.id, data.ip);
       break;
