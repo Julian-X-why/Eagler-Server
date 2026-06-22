@@ -28,31 +28,24 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve the pure-browser MC 1.12.2 server dashboard as static files.
-// ALL game logic runs in the browser — this just serves HTML/CSS/JS files.
 const publicDir = path.join(__dirname, "../public");
 
-// Development: prevent browsers from caching index.html so asset version
-// query params (?v=N) are always re-evaluated.
 const htmlCacheOpts =
   process.env.NODE_ENV !== "production"
-    ? { setHeaders: (res: import("http").ServerResponse, path: string) => {
-        if (path.endsWith(".html")) {
+    ? { setHeaders: (res: import("http").ServerResponse, filePath: string) => {
+        if (filePath.endsWith(".html")) {
           res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
           res.setHeader("Pragma", "no-cache");
         }
       }}
     : {};
 
-// The proxy routes /api/* → this server without rewriting, so we must
-// serve static files under BOTH "/" and "/api/" to cover relative asset
-// paths that the browser resolves as /api/css/... , /api/js/... , etc.
 app.use("/api", express.static(publicDir, htmlCacheOpts));
 app.use(express.static(publicDir, htmlCacheOpts));
 
+app.use("/api", downloadRouter);
 app.use("/api", router);
 
-// Fallback: serve index.html for any non-API route
 app.get("/{*splat}", (_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
 });

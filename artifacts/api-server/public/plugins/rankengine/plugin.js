@@ -43,7 +43,7 @@ BOTTLE.register({
 
   function getGroup(player) {
     const name = player.username.toLowerCase();
-    const gName = playerGroups[name] || (self.BOTTLE.getConfig?.('rankengine','defaultGroup')?.'member');
+    const gName = playerGroups[name] || self.BOTTLE.getConfig?.('rankengine','defaultGroup') || 'member';
     return groups[gName] || groups.member || { prefix:'§7', suffix:'', color:'§7', weight:0 };
   }
   function applyRank(player) {

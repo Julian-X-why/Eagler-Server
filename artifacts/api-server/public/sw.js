@@ -1,4 +1,4 @@
-const CACHE = 'eaglernet-v6';
+const CACHE = 'eaglernet-v7';
 const ASSETS = [
   './', './index.html', './config.js', './manifest.json',
   './css/main.css',
@@ -6,13 +6,26 @@ const ASSETS = [
   './js/mc/buffer.js', './js/mc/nbt.js', './js/mc/noise.js',
   './js/mc/blocks.js', './js/mc/world.js', './js/mc/chunk.js',
   './js/mc/protocol.js', './js/mc/server.js',
-  './plugins/example-plugin/plugin.js',
-  './plugins/eaglercraftxserver/plugin.js',
-  './plugins/chatfilter/plugin.js',
-  './plugins/anticheat/plugin.js',
-  './plugins/worldedit/plugin.js',
-  './plugins/worldguard/plugin.js',
-  './plugins/multiverse/plugin.js',
+  './plugins/nexuslink/plugin.js',
+  './plugins/purityfilter/plugin.js',
+  './plugins/integritycheck/plugin.js',
+  './plugins/worldsculptor/plugin.js',
+  './plugins/terrainguard/plugin.js',
+  './plugins/voidportal/plugin.js',
+  './plugins/authshield/plugin.js',
+  './plugins/essentialcraft/plugin.js',
+  './plugins/chatforge/plugin.js',
+  './plugins/rankengine/plugin.js',
+  './plugins/ecovault/plugin.js',
+  './plugins/tradingpost/plugin.js',
+  './plugins/clanforge/plugin.js',
+  './plugins/banhammer/plugin.js',
+  './plugins/vaultpack/plugin.js',
+  './plugins/cronmaster/plugin.js',
+  './plugins/welcomemat/plugin.js',
+  './plugins/tabflair/plugin.js',
+  './plugins/spawnmaster/plugin.js',
+  './plugins/adminspy/plugin.js',
 ];
 self.addEventListener('install', e => e.waitUntil(
   caches.open(CACHE).then(c => c.addAll(ASSETS).catch(()=>{})).then(()=>self.skipWaiting())
