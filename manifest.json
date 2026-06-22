@@ -1,0 +1,10 @@
+{
+  "name": "EaglerNet Server",
+  "short_name": "EaglerNet",
+  "description": "MC 1.12.2 browser server — no Node.js required",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0a0a12",
+  "theme_color": "#4ecca3",
+  "icons": [{"src":"assets/icon.png","sizes":"512x512","type":"image/png"}]
+}
