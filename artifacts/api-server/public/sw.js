@@ -1,4 +1,4 @@
-const CACHE = 'eaglernet-v7';
+const CACHE = 'eaglernet-v8';
 const ASSETS = [
   './', './index.html', './config.js', './manifest.json',
   './css/main.css',
@@ -35,6 +35,8 @@ self.addEventListener('activate', e => e.waitUntil(
 ));
 self.addEventListener('fetch', e => {
   if (e.request.method!=='GET') return;
+  // Never cache the large EPW file - always fetch fresh
+  if (e.request.url.includes('assets.epw')) return;
   e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{
     if (res&&res.status===200){ const clone=res.clone(); caches.open(CACHE).then(c=>c.put(e.request,clone)); }
     return res;

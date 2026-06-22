@@ -496,11 +496,18 @@ function disconnectRelay() {
   if (hostWS) { hostWS.close(); hostWS=null; }
   state.relayStatus='disconnected'; updateRelayUI();
 }
+function _ab2b64(ab) {
+  const bytes = new Uint8Array(ab);
+  let str = '';
+  for (let i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+  return btoa(str);
+}
+
 function relayFromWorker(msg) {
   if (!hostWS || hostWS.readyState!==WebSocket.OPEN) return;
   if (msg.type==='ws-send') {
     const ab = msg.data instanceof ArrayBuffer ? msg.data : new Uint8Array(msg.data).buffer;
-    const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+    const b64 = _ab2b64(ab);
     hostWS.send(JSON.stringify({ type:'player-data', id:msg.id, data:b64 }));
   } else if (msg.type==='ws-disconnect') {
     hostWS.send(JSON.stringify({ type:'player-kick', id:msg.id, reason:'Disconnected' }));
@@ -523,7 +530,7 @@ function updateConnectionURLs() {
 
 // ── Play Tab ───────────────────────────────────────────────────
 const PLAY_URL_KEY    = 'eaglernet_play_client_url';
-const DEFAULT_CLIENT  = 'https://eaglercraft.com/mc/1.12.2-u3/';
+const DEFAULT_CLIENT  = '/api/client/';
 
 function getServerURL() {
   if (state.isStaticMode) return '';
@@ -532,8 +539,14 @@ function getServerURL() {
 
 function initPlayTab() {
   const urlInput = $('play-client-url');
-  if (urlInput && !urlInput.value) {
-    urlInput.value = localStorage.getItem(PLAY_URL_KEY) || DEFAULT_CLIENT;
+  if (urlInput) {
+    // Reset any old fake eaglercraft.com URL to the bundled client
+    let stored = localStorage.getItem(PLAY_URL_KEY) || DEFAULT_CLIENT;
+    if (stored.includes('eaglercraft.com') || stored.includes('1.12.2-u3')) {
+      stored = DEFAULT_CLIENT;
+      localStorage.setItem(PLAY_URL_KEY, stored);
+    }
+    if (!urlInput.value) urlInput.value = stored;
   }
   updatePlayServerHint();
 }

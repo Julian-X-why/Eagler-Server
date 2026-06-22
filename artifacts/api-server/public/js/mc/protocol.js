@@ -217,6 +217,32 @@ class PlayerSession {
   _processPackets() {
     while (true) {
       if (this._readBuf.length < 1) return;
+
+      // ── EaglercraftX pre-handshake detection ────────────────
+      // EaglercraftX clients send a 2-byte BE length packet BEFORE
+      // the standard MC VarInt-framed handshake.
+      // Detect: first byte = 0x00 (high byte of a small 2-byte length)
+      // and second byte is small (≤ 64), indicating a short pre-handshake packet.
+      if (!this._frameDetected) {
+        if (this._readBuf.length < 2) return;
+        if (this._readBuf[0] === 0x00 && this._readBuf[1] <= 0x40) {
+          this._eaglerMode = true;
+        }
+        this._frameDetected = true;
+      }
+
+      // ── EaglercraftX 2-byte framing (pre-handshake only) ────
+      if (this._eaglerMode) {
+        if (this._readBuf.length < 2) return;
+        const pktLen = (this._readBuf[0] << 8) | this._readBuf[1];
+        if (this._readBuf.length < 2 + pktLen) return;
+        const pkt = this._readBuf.slice(2, 2 + pktLen);
+        this._readBuf = this._readBuf.slice(2 + pktLen);
+        const done = this._handleEaglerPreHandshake(pkt);
+        if (done) return; // switched to VarInt mode for MC play
+        continue;
+      }
+
       // Legacy (1.5.2/1.6.x) uses 2-byte big-endian length prefix
       if (this.family === VersionFamily.LEGACY && this.state === State.PLAY) {
         if (this._readBuf.length < 3) return;
@@ -244,6 +270,71 @@ class PlayerSession {
           msg: `Pkt err [${this.username}]: ${e.message}` });
       }
     }
+  }
+
+  // ── EaglercraftX pre-handshake handler ───────────────────────
+  // Implements the EaglercraftX WebSocket protocol (2-byte length prefix).
+  // Returns true when the pre-handshake is complete and we switch to MC play.
+  _handleEaglerPreHandshake(pkt) {
+    if (pkt.length === 0) return false;
+    const type = pkt[0];
+
+    if (type === 0x01) {
+      // Server info request → respond with server MOTD
+      const cfg = this.server.config;
+      const online = [...this.server.players.values()];
+      const info = {
+        name:    cfg.motd || 'EaglerNet',
+        cracked: true,
+        motd:    cfg.motd || 'EaglerNet',
+        online:  online.length,
+        max:     cfg.maxPlayers,
+        vers:    'EaglerNet 1.12.2',
+        time:    Date.now(),
+      };
+      const json      = JSON.stringify(info);
+      const jsonBytes = new TextEncoder().encode(json);
+      const resp      = new Uint8Array(2 + 1 + jsonBytes.length);
+      const len       = 1 + jsonBytes.length;
+      resp[0] = (len >> 8) & 0xFF;
+      resp[1] =  len       & 0xFF;
+      resp[2] = 0x01;
+      resp.set(jsonBytes, 3);
+      this._sendRawBytes(resp);
+      return false;
+    }
+
+    if (type === 0x02) {
+      // Login request: payload = username bytes (after the type byte)
+      const usernameBytes = pkt.slice(1);
+      this.username = new TextDecoder().decode(usernameBytes).replace(/\0/g, '').slice(0, 16) || 'Player';
+      this.uuid     = this._offlineUUID(this.username);
+
+      // Send login OK (type 0x02, 1 byte payload = 0x00 = success)
+      this._sendRawBytes(new Uint8Array([0x00, 0x01, 0x02]));
+
+      // Switch to standard MC play (VarInt framing from here on)
+      this._eaglerMode = false;
+      this.proto  = 340;
+      this.family = VersionFamily.V112;
+      this.state  = State.PLAY;
+      self.postMessage({ type: 'log', level: 'info',
+        msg: `${this.username} logged in [EaglercraftX / 1.12.2]` });
+      this._onLoginSuccess();
+      return true; // stop processing; MC play packets arrive next
+    }
+
+    return false;
+  }
+
+  // Send raw bytes without any framing (used for EaglercraftX pre-handshake)
+  _sendRawBytes(bytes) {
+    try {
+      if (this.channel.readyState === 'open') {
+        const ab = bytes instanceof Uint8Array ? bytes.buffer : new Uint8Array(bytes).buffer;
+        this.channel.send(ab);
+      }
+    } catch {}
   }
 
   _handlePacket(buf) {
